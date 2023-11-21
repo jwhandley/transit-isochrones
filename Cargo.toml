@@ -1,0 +1,23 @@
+[package]
+name = "transit-isochrones"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.75"
+chrono = "0.4.31"
+clap = { version = "4.4.8", features = ["derive"] }
+delaunator = "1.0.2"
+geo = "0.27.0"
+geojson = "0.24.1"
+geos = { version = "8.3.0", features = ["geojson", "geo-types", "json", "geo"] }
+gtfs-structures = "0.37.0"
+kdtree = "0.7.0"
+osmpbf = "0.3.2"
+rayon = "1.8.0"
+serde = "1.0.192"
+
+[profile.release]
+debug = true
