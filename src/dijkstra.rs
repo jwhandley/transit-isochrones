@@ -6,10 +6,9 @@ use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
 
 pub const WALKING_SPEED: f64 = 1.4; // meters per second
+const RADIUS_EARTH_KM: f64 = 6371.0;
 
 pub fn haversine_distance(coord1: &[f64], coord2: &[f64]) -> f64 {
-    let radius_earth_km = 6371.0;
-
     let dlat = deg_to_rad(coord2[1] - coord1[1]);
     let dlon = deg_to_rad(coord2[0] - coord1[0]);
 
@@ -18,7 +17,7 @@ pub fn haversine_distance(coord1: &[f64], coord2: &[f64]) -> f64 {
 
     let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
 
-    radius_earth_km * c * 1000.0
+    RADIUS_EARTH_KM * c * 1000.0
 }
 
 fn deg_to_rad(deg: f64) -> f64 {

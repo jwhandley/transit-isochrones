@@ -53,7 +53,6 @@ impl Graph {
     pub fn add_node(&mut self, index: i64, x: f64, y: f64) {
         let node = Node { id: index, x, y };
         self.nodes.insert(index, node);
-        self.adjacency.entry(index).or_default();
     }
 
     pub fn neighbors(&self, index: i64) -> Option<&Vec<Rc<Edge>>> {
@@ -109,13 +108,16 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> (Graph, KdTree<f64, i
     let mut nodes_without_edges = Vec::new();
 
     for (index, _) in graph.nodes.iter() {
-        if graph.adjacency.get(index).unwrap().is_empty() {
-            nodes_without_edges.push(*index);
-        } else {
-            let id = *index;
-            let lon = graph.nodes.get(index).unwrap().x;
-            let lat = graph.nodes.get(index).unwrap().y;
-            osm_tree.add([lon, lat], id).unwrap();
+        match graph.neighbors(*index) {
+            Some(_) => {
+                let id = *index;
+                let lon = graph.nodes.get(index).unwrap().x;
+                let lat = graph.nodes.get(index).unwrap().y;
+                osm_tree.add([lon, lat], id).unwrap();    
+            },
+            None => {
+                nodes_without_edges.push(*index);
+            }
         }
     }
 
@@ -154,8 +156,15 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> (Graph, KdTree<f64, i
                 max_index
             });
 
-            graph.add_edge(index, to_index, None, None, path.traversal_time);
-            graph.add_edge(to_index, index, None, None, path.traversal_time);
+            match path.is_bidirectional {
+                gtfs_structures::PathwayDirectionType::Unidirectional => {
+                    graph.add_edge(index, to_index, None, None, path.traversal_time);
+                },
+                gtfs_structures::PathwayDirectionType::Bidirectional => {
+                    graph.add_edge(index, to_index, None, None, path.traversal_time);
+                graph.add_edge(to_index, index, None, None, path.traversal_time);
+                }
+            }            
         }
     }
 
@@ -178,13 +187,6 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> (Graph, KdTree<f64, i
             previous_stop = stop_time;
         }
     }
-
-    let nodes_without_edges = graph
-        .adjacency
-        .iter()
-        .filter(|(_, edges)| edges.is_empty())
-        .count();
-    println!("Nodes without edges: {}", nodes_without_edges);
 
     for stop in gtfs.stops.values() {
         let id = stop_id_to_index.get(stop.id.as_str()).unwrap();
