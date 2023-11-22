@@ -1,6 +1,7 @@
 use crate::Graph;
 use chrono::NaiveTime;
 use chrono::Timelike;
+use kdtree::KdTree;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
 
@@ -50,6 +51,7 @@ impl Eq for State {}
 
 pub fn dijkstra(
     graph: &Graph,
+    tree: &KdTree<f64, i64, [f64; 2]>,
     start_coords: &[f64; 2],
     arrival_time: NaiveTime,
     duration: u32,
@@ -58,15 +60,13 @@ pub fn dijkstra(
     let mut queue = BinaryHeap::new();
     let start_time = arrival_time.num_seconds_from_midnight() - duration;
 
-    let nearest = graph
-        .kdtree
-        .nearest(start_coords, 1, &haversine_distance)
-        .unwrap();
-    dbg!(&nearest);
+    let nearest = tree.nearest(start_coords, 1, &haversine_distance).expect("No nearest node");
     let start_node = *nearest[0].1;
+    let distance = nearest[0].0;
+    let start_cost = start_time + (distance / WALKING_SPEED) as u32;
 
     queue.push(State {
-        cost: start_time,
+        cost: start_cost,
         position: start_node,
         coordinates: *start_coords,
     });
@@ -91,7 +91,10 @@ pub fn dijkstra(
             continue;
         }
 
-        for edge in graph.neighbors(position).unwrap() {
+        for edge in graph
+            .neighbors(position)
+            .expect("There should be no nodes without edges")
+        {
             // If there is a start time and it is before the current time, skip
             if let Some(start_time) = edge.start_time {
                 if start_time < cost {

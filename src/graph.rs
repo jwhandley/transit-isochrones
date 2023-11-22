@@ -20,7 +20,6 @@ pub struct Node {
 }
 
 pub struct Graph {
-    pub kdtree: KdTree<f64, i64, [f64; 2]>,
     pub nodes: HashMap<i64, Node>,
     pub adjacency: HashMap<i64, Vec<Rc<Edge>>>,
 }
@@ -28,7 +27,6 @@ pub struct Graph {
 impl Graph {
     pub fn default() -> Graph {
         Graph {
-            kdtree: KdTree::new(2),
             nodes: HashMap::new(),
             adjacency: HashMap::new(),
         }
@@ -55,7 +53,7 @@ impl Graph {
     pub fn add_node(&mut self, index: i64, x: f64, y: f64) {
         let node = Node { id: index, x, y };
         self.nodes.insert(index, node);
-        self.kdtree.add([x, y], index).unwrap();
+        self.adjacency.entry(index).or_default();
     }
 
     pub fn neighbors(&self, index: i64) -> Option<&Vec<Rc<Edge>>> {
@@ -63,7 +61,7 @@ impl Graph {
     }
 }
 
-pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> Graph {
+pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> (Graph, KdTree<f64, i64, [f64; 2]>) {
     let mut osm_tree: KdTree<f64, i64, [f64; 2]> = KdTree::new(2);
     let mut graph = Graph::default();
     let mut max_index = 0;
@@ -75,13 +73,11 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> Graph {
     reader
         .for_each(|element| match element {
             Element::Node(osm_node) => {
-                // println!("Adding node {}", osm_node.id());
                 if is_walkable_node(&osm_node) {
                     let index = osm_node.id();
                     max_index = max_index.max(index);
                     let x = osm_node.lon();
                     let y = osm_node.lat();
-                    osm_tree.add([x, y], index).unwrap();
                     graph.add_node(index, x, y);
                 }
             }
@@ -100,19 +96,33 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> Graph {
                 }
             }
             Element::DenseNode(dense_node) => {
-                // println!("Adding dense node {}", dense_node.id());
                 max_index = max_index.max(dense_node.id());
                 let x = dense_node.lon();
                 let y = dense_node.lat();
                 let id = dense_node.id();
-                osm_tree.add([x, y], id).unwrap();
                 graph.add_node(id, x, y);
             }
-            _ => {
-                // println!("Skipping element {:?}", element);
-            }
+            _ => {}
         })
         .unwrap();
+
+    let mut nodes_without_edges = Vec::new();
+
+    for (index, _) in graph.nodes.iter() {
+        if graph.adjacency.get(index).unwrap().is_empty() {
+            nodes_without_edges.push(*index);
+        } else {
+            let id = *index;
+            let lon = graph.nodes.get(index).unwrap().x;
+            let lat = graph.nodes.get(index).unwrap().y;
+            osm_tree.add([lon, lat], id).unwrap();
+        }
+    }
+
+    for i in nodes_without_edges.iter() {
+        graph.nodes.remove(i);
+        graph.adjacency.remove(i);
+    }
 
     println!("Adding GTFS structure to graph");
     let mut stop_id_to_index: HashMap<&str, i64> = HashMap::new();
@@ -132,7 +142,7 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> Graph {
             graph.add_edge(index, osm_node, None, None, Some(traversal_time));
             graph.add_edge(osm_node, index, None, None, Some(traversal_time));
         } else {
-            eprintln!("No nearest node found for stop {}", stop_id);
+            panic!("No nearest node found for stop {}", stop_id);
         }
 
         for path in stop.pathways.iter() {
@@ -169,12 +179,25 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> Graph {
         }
     }
 
+    let nodes_without_edges = graph
+        .adjacency
+        .iter()
+        .filter(|(_, edges)| edges.is_empty())
+        .count();
+    println!("Nodes without edges: {}", nodes_without_edges);
+
+    for stop in gtfs.stops.values() {
+        let id = stop_id_to_index.get(stop.id.as_str()).unwrap();
+        let lon = stop.longitude.unwrap();
+        let lat = stop.latitude.unwrap();
+        osm_tree.add([lon, lat], *id).unwrap();
+    }
+
     println!(
         "Took {}ms to build the graph",
         start_time.elapsed().as_millis()
     );
-
-    graph
+    (graph, osm_tree)
 }
 
 fn is_walkable_node(osm_node: &osmpbf::Node) -> bool {
