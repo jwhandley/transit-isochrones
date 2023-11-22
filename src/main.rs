@@ -1,9 +1,9 @@
 use chrono::NaiveTime;
 use clap::Parser;
 use kdtree::KdTree;
-use transit_isochrones::{Graph, dijkstra, alpha_shape, geometry_to_geojson, build_graph_osm};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use transit_isochrones::{alpha_shape, build_graph_osm, dijkstra, geometry_to_geojson, Graph};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -29,6 +29,12 @@ fn generate_isochrone(
     Ok(geojson)
 }
 
+fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
+}
+
 fn main() -> Result<(), anyhow::Error> {
     let args = Args::parse();
     dbg!(&args);
@@ -51,6 +57,7 @@ fn main() -> Result<(), anyhow::Error> {
         args.arrival_time,
         args.duration,
     )?;
+
     // Save the isochrone to a file
     std::fs::write(format!("data/isochrone_{}.geojson", hash), geojson)?;
     println!("Saved to data/isochrone_{}.geojson", hash);
@@ -60,10 +67,4 @@ fn main() -> Result<(), anyhow::Error> {
     );
 
     Ok(())
-}
-
-fn calculate_hash<T: Hash>(t: &T) -> u64 {
-    let mut s = DefaultHasher::new();
-    t.hash(&mut s);
-    s.finish()
 }
