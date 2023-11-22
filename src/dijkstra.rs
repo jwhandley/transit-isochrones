@@ -13,10 +13,8 @@ pub fn haversine_distance(coord1: &[f64], coord2: &[f64]) -> f64 {
     let dlon = deg_to_rad(coord2[0] - coord1[0]);
 
     let a = (dlat / 2.0).sin().powi(2)
-        + coord1[1].to_radians().cos()
-        * coord2[1].to_radians().cos()
-        * (dlon / 2.0).sin().powi(2);
-    
+        + coord1[1].to_radians().cos() * coord2[1].to_radians().cos() * (dlon / 2.0).sin().powi(2);
+
     let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
 
     radius_earth_km * c * 1000.0
@@ -118,7 +116,7 @@ pub fn dijkstra(
                         &[start_node.x, start_node.y],
                         &[end_node.x, end_node.y],
                     );
-                    
+
                     let duration = (distance / WALKING_SPEED) as u32;
                     new_cost + duration
                 }

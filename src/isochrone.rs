@@ -1,4 +1,6 @@
+use crate::dijkstra::haversine_distance;
 use delaunator::{triangulate, Point};
+use geo::Coord;
 use geojson::Feature;
 use geojson::GeoJson;
 use geojson::Geometry as JsonGeometry;
@@ -6,58 +8,23 @@ use geos::Geom;
 use geos::Geometry;
 use std::cmp::max;
 use std::cmp::min;
-use std::collections::HashSet;
-use crate::dijkstra::haversine_distance;
+use std::collections::HashMap;
 
-pub fn create_grid(
-    midpoint: &[f64; 2],
-    step: f64,
-    size: usize,
-    points: &[[f64; 2]],
-    threshold: f64,
-) -> Vec<Point> {
-    let mut grid = Vec::new();
-    let x_min = midpoint[0] - step * (size / 2) as f64;
-    let y_min = midpoint[1] - step * (size / 2) as f64;
-
-    for i in 0..size {
-        for j in 0..size {
-            let x = x_min + step * i as f64;
-            let y = y_min + step * j as f64;
-            let point = Point { x, y };
-            if idw(&point, points) > threshold {
-                grid.push(point);
-            }
-        }
-    }
-
-    grid
-}
-
-fn idw(point: &Point, points: &[[f64; 2]]) -> f64 {
-    let mut sum = 0.0;
-
-    for p in points {
-        let distance = haversine_distance(&[point.x, point.y], p);
-        if distance == 0.0 {
-            sum += 1.0;
-        }
-        sum += 1.0 / distance;
-    }
-
-    sum / points.len() as f64
-}
-
-pub fn convert_points(points: &[[f64;2]]) -> Vec<Point> {
+/// Converts coordinates to delaunator points.
+fn convert_points(points: &[[f64; 2]]) -> Vec<Point> {
     points.iter().map(|p| Point { x: p[0], y: p[1] }).collect()
 }
 
 /// Returns the alpha shape of a set of points.
-pub fn alpha_shape(points: &[Point], alpha: f64) -> Result<Geometry, anyhow::Error> {
+pub fn alpha_shape(points: &[[f64; 2]], alpha: f64) -> Result<Geometry, anyhow::Error> {
+    let points = &convert_points(points);
+    let start_time = std::time::Instant::now();
     let triangulation = triangulate(points);
+    println!("Took {}ms to triangulate", start_time.elapsed().as_millis());
 
     // Trace out edges of the triangulation
-    let mut edges = HashSet::new();
+    let start_time = std::time::Instant::now();
+    let mut edges_count = HashMap::new();
     for i in 0..triangulation.triangles.len() / 3 {
         let i0 = triangulation.triangles[3 * i];
         let i1 = triangulation.triangles[3 * i + 1];
@@ -68,29 +35,39 @@ pub fn alpha_shape(points: &[Point], alpha: f64) -> Result<Geometry, anyhow::Err
         let p2 = &points[i2];
 
         let circumradius = calculate_circumradius(p0, p1, p2);
-        // dbg!(circumradius);
 
         if circumradius < alpha {
-            edges.insert((min(i0, i1), max(i0, i1)));
-            edges.insert((min(i1, i2), max(i1, i2)));
-            edges.insert((min(i2, i0), max(i2, i0)));
+            *edges_count.entry((min(i0, i1), max(i0, i1))).or_insert(0) += 1;
+            *edges_count.entry((min(i1, i2), max(i1, i2))).or_insert(0) += 1;
+            *edges_count.entry((min(i2, i0), max(i2, i0))).or_insert(0) += 1;
         }
     }
+    println!("Took {}ms to trace edges", start_time.elapsed().as_millis());
 
     // Convert edges to a linestring
+    let start_time = std::time::Instant::now();
     let mut linestrings = vec![];
-    for (i0, i1) in edges {
+    for (&(i0, i1), _) in edges_count.iter().filter(|&(_, v)| *v == 1) {
         let p0 = &points[i0];
         let p1 = &points[i1];
-        let line = geos::Geometry::new_from_wkt(&format!(
-            "LINESTRING({} {}, {} {})",
-            p0.x, p0.y, p1.x, p1.y
-        ))?;
+        let line: geos::Geometry =
+            geo::LineString::new(vec![Coord::from([p0.x, p0.y]), Coord::from([p1.x, p1.y])])
+                .try_into()?;
         linestrings.push(line);
     }
 
+    println!(
+        "Took {}ms to convert edges to linestrings",
+        start_time.elapsed().as_millis()
+    );
+
     // Convert linestring to polygon
+    let start_time = std::time::Instant::now();
     let polygon = Geometry::polygonize(&linestrings)?.unary_union()?;
+    println!(
+        "Took {}ms to convert linestrings to polygon",
+        start_time.elapsed().as_millis()
+    );
 
     Ok(polygon)
 }

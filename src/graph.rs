@@ -127,9 +127,10 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> Graph {
 
         graph.add_node(index, x, y);
 
-        if let Some((_, osm_node)) = nearest_node(&osm_tree, &[x, y]) {
-            graph.add_edge(index, osm_node, None, None, Some(0));
-            graph.add_edge(osm_node, index, None, None, Some(0));
+        if let Some((distance, osm_node)) = nearest_node(&osm_tree, &[x, y]) {
+            let traversal_time = (distance / crate::dijkstra::WALKING_SPEED) as u32;
+            graph.add_edge(index, osm_node, None, None, Some(traversal_time));
+            graph.add_edge(osm_node, index, None, None, Some(traversal_time));
         } else {
             eprintln!("No nearest node found for stop {}", stop_id);
         }
@@ -220,7 +221,7 @@ fn is_walkable_way(way: &osmpbf::Way) -> bool {
 
 fn nearest_node(tree: &KdTree<f64, i64, [f64; 2]>, coords: &[f64; 2]) -> Option<(f64, i64)> {
     let nearest = tree
-        .nearest(coords, 1, &kdtree::distance::squared_euclidean)
+        .nearest(coords, 1, &crate::dijkstra::haversine_distance)
         .expect("Should have been able to find node");
 
     if nearest.is_empty() {

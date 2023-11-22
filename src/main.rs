@@ -7,7 +7,7 @@ mod graph;
 mod isochrone;
 use crate::dijkstra::dijkstra;
 use crate::graph::{build_graph_osm, Graph};
-use crate::isochrone::{alpha_shape, create_grid, convert_points, geometry_to_geojson};
+use crate::isochrone::{alpha_shape, geometry_to_geojson};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -45,16 +45,7 @@ fn main() -> Result<(), anyhow::Error> {
 
     // Create isochrone
     let start_time = std::time::Instant::now();
-    // let grid_points = create_grid(
-    //     &[2.356693437528564, 48.88230685842714],
-    //     0.001,
-    //     500,
-    //     &points,
-    //     25.0,
-    // );
-    // dbg!(grid_points.len());
-    let grid_points = convert_points(&points);
-    let geom = alpha_shape(&grid_points, 60.0)?;
+    let geom = alpha_shape(&points, 75.0)?;
     let geojson = geometry_to_geojson(geom)?;
     println!(
         "Took {}ms to create the isochrone",
