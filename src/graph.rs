@@ -18,19 +18,13 @@ pub struct Node {
     pub y: f64,
 }
 
+#[derive(Default)]
 pub struct Graph {
     pub nodes: HashMap<i64, Node>,
     pub adjacency: HashMap<i64, Vec<Edge>>,
 }
 
 impl Graph {
-    pub fn default() -> Graph {
-        Graph {
-            nodes: HashMap::new(),
-            adjacency: HashMap::new(),
-        }
-    }
-
     pub fn add_edge(
         &mut self,
         origin: i64,

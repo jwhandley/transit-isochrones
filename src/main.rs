@@ -1,14 +1,9 @@
 use chrono::NaiveTime;
 use clap::Parser;
 use kdtree::KdTree;
+use transit_isochrones::{Graph, dijkstra, alpha_shape, geometry_to_geojson, build_graph_osm};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-mod dijkstra;
-mod graph;
-mod isochrone;
-use crate::dijkstra::dijkstra;
-use crate::graph::{build_graph_osm, Graph};
-use crate::isochrone::{alpha_shape, geometry_to_geojson};
 
 #[derive(Parser, Debug)]
 struct Args {
