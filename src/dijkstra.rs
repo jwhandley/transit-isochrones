@@ -59,7 +59,9 @@ pub fn dijkstra(
     let mut queue = BinaryHeap::new();
     let start_time = arrival_time.num_seconds_from_midnight() - duration;
 
-    let nearest = tree.nearest(start_coords, 1, &haversine_distance).expect("No nearest node");
+    let nearest = tree
+        .nearest(start_coords, 1, &haversine_distance)
+        .expect("No nearest node");
     let start_node = *nearest[0].1;
     let distance = nearest[0].0;
     let start_cost = start_time + (distance / WALKING_SPEED) as u32;

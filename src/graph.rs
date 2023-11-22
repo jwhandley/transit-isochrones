@@ -2,7 +2,6 @@ use gtfs_structures::Gtfs;
 use kdtree::KdTree;
 use osmpbf::{Element, ElementReader};
 use std::collections::HashMap;
-use std::rc::Rc;
 
 pub struct Edge {
     pub origin: i64,
@@ -21,7 +20,7 @@ pub struct Node {
 
 pub struct Graph {
     pub nodes: HashMap<i64, Node>,
-    pub adjacency: HashMap<i64, Vec<Rc<Edge>>>,
+    pub adjacency: HashMap<i64, Vec<Edge>>,
 }
 
 impl Graph {
@@ -40,13 +39,13 @@ impl Graph {
         end_time: Option<u32>,
         traversal_time: Option<u32>,
     ) {
-        let edge = Rc::new(Edge {
+        let edge = Edge {
             origin,
             destination,
             start_time,
             end_time,
             traversal_time,
-        });
+        };
         self.adjacency.entry(origin).or_default().push(edge);
     }
 
@@ -55,7 +54,7 @@ impl Graph {
         self.nodes.insert(index, node);
     }
 
-    pub fn neighbors(&self, index: i64) -> Option<&Vec<Rc<Edge>>> {
+    pub fn neighbors(&self, index: i64) -> Option<&Vec<Edge>> {
         self.adjacency.get(&index)
     }
 }
@@ -113,8 +112,8 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> (Graph, KdTree<f64, i
                 let id = *index;
                 let lon = graph.nodes.get(index).unwrap().x;
                 let lat = graph.nodes.get(index).unwrap().y;
-                osm_tree.add([lon, lat], id).unwrap();    
-            },
+                osm_tree.add([lon, lat], id).unwrap();
+            }
             None => {
                 nodes_without_edges.push(*index);
             }
@@ -132,6 +131,8 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> (Graph, KdTree<f64, i
         let x = stop.longitude.unwrap();
         let y = stop.latitude.unwrap();
 
+        let (distance, osm_node) = nearest_node(&osm_tree, &[x, y]).expect("No nearest node found");
+
         let index = *stop_id_to_index.entry(stop_id.as_str()).or_insert({
             max_index += 1;
             max_index
@@ -139,14 +140,11 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> (Graph, KdTree<f64, i
 
         graph.add_node(index, x, y);
 
-        if let Some((distance, osm_node)) = nearest_node(&osm_tree, &[x, y]) {
-            let traversal_time = (distance / crate::dijkstra::WALKING_SPEED) as u32;
-            graph.add_edge(index, osm_node, None, None, Some(traversal_time));
-            graph.add_edge(osm_node, index, None, None, Some(traversal_time));
-        } else {
-            panic!("No nearest node found for stop {}", stop_id);
-        }
+        let traversal_time = (distance / crate::dijkstra::WALKING_SPEED) as u32;
+        graph.add_edge(index, osm_node, None, None, Some(traversal_time));
+        graph.add_edge(osm_node, index, None, None, Some(traversal_time));
 
+        let from_index = *stop_id_to_index.get(stop_id.as_str()).unwrap();
         for path in stop.pathways.iter() {
             let to_id = path.to_stop_id.as_str();
 
@@ -158,13 +156,13 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> (Graph, KdTree<f64, i
 
             match path.is_bidirectional {
                 gtfs_structures::PathwayDirectionType::Unidirectional => {
-                    graph.add_edge(index, to_index, None, None, path.traversal_time);
-                },
-                gtfs_structures::PathwayDirectionType::Bidirectional => {
-                    graph.add_edge(index, to_index, None, None, path.traversal_time);
-                graph.add_edge(to_index, index, None, None, path.traversal_time);
+                    graph.add_edge(from_index, to_index, None, None, path.traversal_time);
                 }
-            }            
+                gtfs_structures::PathwayDirectionType::Bidirectional => {
+                    graph.add_edge(from_index, to_index, None, None, path.traversal_time);
+                    graph.add_edge(to_index, from_index, None, None, path.traversal_time);
+                }
+            }
         }
     }
 
