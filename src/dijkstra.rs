@@ -7,6 +7,7 @@ use std::collections::{BinaryHeap, HashSet};
 
 pub const WALKING_SPEED: f64 = 1.4; // meters per second
 const RADIUS_EARTH_KM: f64 = 6371.0;
+const MAX_DISTANCE: f64 = 500.0;
 
 pub fn haversine_distance(coord1: &[f64], coord2: &[f64]) -> f64 {
     let dlat = deg_to_rad(coord2[1] - coord1[1]);
@@ -54,7 +55,7 @@ pub fn dijkstra(
     start_coords: &[f64; 2],
     arrival_time: NaiveTime,
     duration: u32,
-) -> Vec<[f64; 2]> {
+) -> Result<Vec<[f64; 2]>, anyhow::Error> {
     let mut visited = HashSet::new();
     let mut queue = BinaryHeap::new();
     let start_time = arrival_time.num_seconds_from_midnight() - duration;
@@ -64,6 +65,11 @@ pub fn dijkstra(
         .expect("No nearest node");
     let start_node = *nearest[0].1;
     let distance = nearest[0].0;
+
+    if distance > MAX_DISTANCE {
+        Err(anyhow::anyhow!("Start node is too far away"))?;
+    }
+
     let start_cost = start_time + (distance / WALKING_SPEED) as u32;
 
     queue.push(State {
@@ -143,5 +149,5 @@ pub fn dijkstra(
         }
     }
 
-    reachable_coords
+    Ok(reachable_coords)
 }

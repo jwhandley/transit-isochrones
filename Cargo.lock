@@ -2579,6 +2579,7 @@ dependencies = [
  "geos",
  "gtfs-structures",
  "kdtree",
+ "num_cpus",
  "osmpbf",
  "rayon",
  "rocket",
