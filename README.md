@@ -6,13 +6,13 @@ This is a web server that exposes a simple API for computing public transportati
 
 You need to have Rust installed to run the server. You can run it using the following command.
 
-```{console}
-cargo run --release -- <path/to/osm/file.osm.pbf> <path/to/gtfs.zip>
+```bash
+cargo run --release -- [path/to/osm/file.osm.pbf] [path/to/gtfs.zip]
 ```
 
 Once the server is running, you can send GET requests to receive isochrones. Here is an example using Python assuming the server is running locally:
 
-```{python}
+```python
 import requests
 
 def get_isochrone(lat, lon, arrival_time, duration):
