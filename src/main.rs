@@ -4,13 +4,11 @@ use chrono::NaiveTime;
 use clap::Parser;
 use kdtree::KdTree;
 use rocket::State;
-use transit_isochrones::{
-    alpha_shape, build_graph_osm, create_grid, dijkstra, geometry_to_geojson, Graph,
-};
+use transit_isochrones::{build_graph_osm, dijkstra, create_contour, Graph};
 
-const GRID_SIZE: usize = 500;
+const GRID_SIZE: f64 = 200.0; // Meters
 const ONE_HOUR: f64 = 3600.0; // Seconds per hour
-const MAX_SPEED: f64 = 50_000.0; // Meters per hour
+const MAX_SPEED: f64 = 75_000.0; // Meters per hour
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -55,19 +53,12 @@ fn isochrone(
         start_time.elapsed().as_millis()
     );
 
-    let size =  (duration as f64 / ONE_HOUR) * MAX_SPEED;
-
-    let start_time = std::time::Instant::now();
-    let grid = create_grid(start_coords, size, GRID_SIZE, &sptree, duration);
-    println!("Took {}ms to create grid", start_time.elapsed().as_millis());
-
-    let precision = size / GRID_SIZE as f64;
-    let geom = match alpha_shape(&grid, precision) {
-        Ok(geometry) => geometry,
-        Err(_) => return Err("Error in computing alpha shape.".to_string()),
-    };
-
-    geometry_to_geojson(geom).map_err(|_| "Error converting geometry to GeoJSON.".to_string())
+    let size = MAX_SPEED * duration as f64 / ONE_HOUR;
+    let resolution = (size / GRID_SIZE) as usize;
+    match create_contour(start_coords, size, resolution, &sptree, duration) {
+        Ok(geojson) => Ok(geojson),
+        Err(_) => Err("Error creating contour".to_string()),
+    }    
 }
 
 #[main]
