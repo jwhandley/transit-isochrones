@@ -6,7 +6,7 @@ use kdtree::KdTree;
 use rocket::State;
 use transit_isochrones::{build_graph_osm, dijkstra, create_contour, Graph};
 
-const GRID_SIZE: f64 = 200.0; // Meters
+const GRID_SIZE: usize = 500;
 const ONE_HOUR: f64 = 3600.0; // Seconds per hour
 const MAX_SPEED: f64 = 75_000.0; // Meters per hour
 
@@ -53,12 +53,20 @@ fn isochrone(
         start_time.elapsed().as_millis()
     );
 
+    let start_time = std::time::Instant::now();
+    // Scale the size of the contour based on the duration
     let size = MAX_SPEED * duration as f64 / ONE_HOUR;
-    let resolution = (size / GRID_SIZE) as usize;
-    match create_contour(start_coords, size, resolution, &sptree, duration) {
-        Ok(geojson) => Ok(geojson),
+    let contour = create_contour(start_coords, size, GRID_SIZE, &sptree, duration);
+
+    println!(
+        "Took {}ms to create contour",
+        start_time.elapsed().as_millis()
+    );
+
+    match contour {
+        Ok(contour) => Ok(contour),
         Err(_) => Err("Error creating contour".to_string()),
-    }    
+    }
 }
 
 #[main]
