@@ -8,8 +8,7 @@ use transit_isochrones::{
     alpha_shape, build_graph_osm, create_grid, dijkstra, geometry_to_geojson, Graph,
 };
 
-const PRECISION: f64 = 50.0; // Meters
-const GRID_SIZE: f64 = 75.0; // Meters
+const GRID_SIZE: usize = 500;
 const ONE_HOUR: f64 = 3600.0; // Seconds per hour
 const MAX_SPEED: f64 = 50_000.0; // Meters per hour
 
@@ -57,12 +56,13 @@ fn isochrone(
     );
 
     let size =  (duration as f64 / ONE_HOUR) * MAX_SPEED;
-    let resolution = (size / GRID_SIZE) as usize;
 
-    dbg!(size, resolution);
-    let grid = create_grid(start_coords, size, resolution, &sptree, duration);
+    let start_time = std::time::Instant::now();
+    let grid = create_grid(start_coords, size, GRID_SIZE, &sptree, duration);
+    println!("Took {}ms to create grid", start_time.elapsed().as_millis());
 
-    let geom = match alpha_shape(&grid, PRECISION) {
+    let precision = size / GRID_SIZE as f64;
+    let geom = match alpha_shape(&grid, precision) {
         Ok(geometry) => geometry,
         Err(_) => return Err("Error in computing alpha shape.".to_string()),
     };

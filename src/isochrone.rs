@@ -20,7 +20,7 @@ pub fn create_grid(
     tree: &KdTree<f64, u32, [f64; 2]>,
     duration: u32,
 ) -> Vec<[f64; 2]> {
-    let mut grid = vec![];
+    let mut grid = Vec::with_capacity(resolution * resolution);
 
     let dlat = size / 111_111.0 / resolution as f64; // 1 degree latitude is 111111 meters
     let dlon = size / (111_111.0 * midpoint[1].to_radians().cos()) / resolution as f64; // Adjusting for longitude, considering latitude
