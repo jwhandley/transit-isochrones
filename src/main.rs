@@ -4,9 +4,9 @@ use chrono::NaiveTime;
 use clap::Parser;
 use kdtree::KdTree;
 use rocket::State;
-use transit_isochrones::{build_graph_osm, dijkstra, create_contour, Graph};
+use transit_isochrones::{build_graph_osm, create_contour, dijkstra, Graph};
 
-const GRID_SIZE: usize = 500;
+const GRID_SIZE: usize = 250;
 const ONE_HOUR: f64 = 3600.0; // Seconds per hour
 const MAX_SPEED: f64 = 75_000.0; // Meters per hour
 
@@ -15,7 +15,6 @@ struct Args {
     osm_path: String,
     gtfs_path: String,
 }
-
 
 struct GraphState {
     graph: Graph,

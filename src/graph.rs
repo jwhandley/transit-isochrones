@@ -11,7 +11,6 @@ pub struct Edge {
     pub traversal_time: Option<u32>,
 }
 
-
 pub struct Node {
     pub id: i64,
     pub x: f64,
