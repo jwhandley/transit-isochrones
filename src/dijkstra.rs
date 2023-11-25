@@ -5,7 +5,7 @@ use kdtree::KdTree;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
 
-pub const WALKING_SPEED: f64 = 1.4; // meters per second
+pub const WALKING_SPEED: f64 = 1.0;
 const RADIUS_EARTH_KM: f64 = 6371.0;
 const MAX_DISTANCE: f64 = 500.0;
 
@@ -55,7 +55,7 @@ pub fn dijkstra(
     start_coords: &[f64; 2],
     arrival_time: NaiveTime,
     duration: u32,
-) -> Result<Vec<[f64; 2]>, anyhow::Error> {
+) -> Result<KdTree<f64, u32, [f64; 2]>, anyhow::Error> {
     let mut visited = HashSet::new();
     let mut queue = BinaryHeap::new();
     let start_time = arrival_time.num_seconds_from_midnight() - duration;
@@ -78,7 +78,7 @@ pub fn dijkstra(
         coordinates: *start_coords,
     });
 
-    let mut reachable_coords = Vec::new();
+    let mut reachable_coords = KdTree::new(2);
 
     while let Some(State {
         cost,
@@ -93,7 +93,7 @@ pub fn dijkstra(
 
         let current_duration = cost - start_time;
         if current_duration <= duration {
-            reachable_coords.push(coordinates);
+            reachable_coords.add(coordinates, current_duration).unwrap();
         } else {
             continue;
         }
