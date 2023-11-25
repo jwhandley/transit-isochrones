@@ -3,6 +3,7 @@ use geojson::FeatureCollection;
 use geojson::GeoJson;
 use kdtree::distance::squared_euclidean;
 use kdtree::KdTree;
+use rayon::prelude::*;
 const OFF_ROAD_WALKING_SPEED: f64 = 1.0;
 const DEGREES_TO_METERS: f64 = 111_111.0;
 
@@ -13,8 +14,6 @@ pub fn create_contour(
     tree: &KdTree<f64, u32, [f64; 2]>,
     duration: u32,
 ) -> Result<String, anyhow::Error> {
-    let mut values = Vec::with_capacity(resolution * resolution);
-
     let dlat = size / DEGREES_TO_METERS / resolution as f64; // 1 degree latitude is 111111 meters
     let dlon = size / (DEGREES_TO_METERS * midpoint[1].to_radians().cos()) / resolution as f64; // Adjusting for longitude, considering latitude
 
@@ -23,22 +22,25 @@ pub fn create_contour(
     let min_lon =
         midpoint[0] - half_grid_size / (DEGREES_TO_METERS * midpoint[1].to_radians().cos());
 
-    for i in 0..resolution {
-        for j in 0..resolution {
-            let x = min_lon + dlon * i as f64;
-            let y = min_lat + dlat * j as f64;
+    let values = (0..resolution)
+        .into_par_iter()
+        .flat_map(|i| {
+            (0..resolution).into_par_iter().map(move |j| {
+                let x = min_lon + dlon * i as f64;
+                let y = min_lat + dlat * j as f64;
 
-            let nearest = tree.nearest(&[x, y], 1, &squared_euclidean).unwrap();
+                let nearest = tree.nearest(&[x, y], 1, &squared_euclidean).unwrap();
 
-            let nearest_node = nearest[0];
-            let time = *nearest_node.1 as f64;
-            let distance = nearest_node.0.sqrt() * DEGREES_TO_METERS;
+                let nearest_node = nearest[0];
+                let time = *nearest_node.1 as f64;
+                let distance = nearest_node.0.sqrt() * DEGREES_TO_METERS;
 
-            let cost = time + distance / OFF_ROAD_WALKING_SPEED;
+                let cost = time + distance / OFF_ROAD_WALKING_SPEED;
 
-            values.push(-cost);
-        }
-    }
+                -cost
+            })
+        })
+        .collect::<Vec<f64>>();
 
     let features = ContourBuilder::new(resolution as u32, resolution as u32, true)
         .x_origin(min_lon)
