@@ -11,7 +11,7 @@ use std::cmp::max;
 use std::cmp::min;
 use std::collections::HashMap;
 
-const OFF_ROAD_WALKING_SPEED: f64 = 1.4;
+const OFF_ROAD_WALKING_SPEED: f64 = 1.0;
 
 pub fn create_grid(
     midpoint: &[f64; 2],

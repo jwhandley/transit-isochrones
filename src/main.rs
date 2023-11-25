@@ -9,15 +9,16 @@ use transit_isochrones::{
 };
 
 const PRECISION: f64 = 50.0; // Meters
-const GRID_SIZE: f64 = 100.0; // Meters
-const ONE_HOUR: f64 = 3600.0; // Seconds
-const MAX_SPEED: f64 = 50_000.0; // Meters per second
+const GRID_SIZE: f64 = 75.0; // Meters
+const ONE_HOUR: f64 = 3600.0; // Seconds per hour
+const MAX_SPEED: f64 = 50_000.0; // Meters per hour
 
 #[derive(Parser, Debug)]
 struct Args {
     osm_path: String,
     gtfs_path: String,
 }
+
 
 struct GraphState {
     graph: Graph,
@@ -57,6 +58,8 @@ fn isochrone(
 
     let size =  (duration as f64 / ONE_HOUR) * MAX_SPEED;
     let resolution = (size / GRID_SIZE) as usize;
+
+    dbg!(size, resolution);
     let grid = create_grid(start_coords, size, resolution, &sptree, duration);
 
     let geom = match alpha_shape(&grid, PRECISION) {
