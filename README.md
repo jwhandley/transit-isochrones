@@ -25,7 +25,6 @@ def get_isochrone(lat, lon, arrival_time, duration):
 ## Todo
 
 This project is still a work in progress. The main improvements I have in the pipeline are:
-- Improving the speed and accuracy of the isochrone geometry creation
 - Making the graph stucture more memory efficient
 - Adding more modes of transport (i.e., walking and driving)
 - Add geocoding functionality so users can supply location names instead of coordinates
