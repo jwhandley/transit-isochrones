@@ -15,12 +15,23 @@ pub struct Node {
     pub id: i64,
     pub x: f64,
     pub y: f64,
+    edges: Vec<Edge>
+}
+
+impl Default for Node {
+    fn default() -> Self {
+        Node {
+            id: 0,
+            x: 0.0,
+            y: 0.0,
+            edges: Vec::new()
+        }
+    }
 }
 
 #[derive(Default)]
 pub struct Graph {
     pub nodes: HashMap<i64, Node>,
-    pub adjacency: HashMap<i64, Vec<Edge>>,
 }
 
 impl Graph {
@@ -39,16 +50,27 @@ impl Graph {
             end_time,
             traversal_time,
         };
-        self.adjacency.entry(origin).or_default().push(edge);
+        self.nodes.entry(origin).or_default().edges.push(edge);
     }
 
     pub fn add_node(&mut self, index: i64, x: f64, y: f64) {
-        let node = Node { id: index, x, y };
-        self.nodes.insert(index, node);
+        let node = self.nodes.entry(index).or_default();
+
+        node.id = index;
+        node.x = x;
+        node.y = y;
     }
 
     pub fn neighbors(&self, index: i64) -> Option<&Vec<Edge>> {
-        self.adjacency.get(&index)
+        self.nodes.get(&index).map(|node| &node.edges)
+    }
+
+    pub fn get_node(&self, index: i64) -> Option<&Node> {
+        self.nodes.get(&index)
+    }
+
+    pub fn clear_edgeless_nodes(&mut self) {
+        self.nodes.retain(|_, node| !node.edges.is_empty());
     }
 }
 
@@ -97,26 +119,15 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> (Graph, KdTree<f64, i
         })
         .unwrap();
 
-    let mut nodes_without_edges = Vec::new();
+    graph.clear_edgeless_nodes();
 
-    for (index, _) in graph.nodes.iter() {
-        match graph.neighbors(*index) {
-            Some(_) => {
-                let id = *index;
-                let lon = graph.nodes.get(index).unwrap().x;
-                let lat = graph.nodes.get(index).unwrap().y;
-                osm_tree.add([lon, lat], id).unwrap();
-            }
-            None => {
-                nodes_without_edges.push(*index);
-            }
-        }
+    for node in graph.nodes.iter() {
+        let id = *node.0;
+        let lon = node.1.x;
+        let lat = node.1.y;
+        osm_tree.add([lon, lat], id).unwrap();
     }
-
-    for i in nodes_without_edges.iter() {
-        graph.nodes.remove(i);
-        graph.adjacency.remove(i);
-    }
+    
 
     println!("Adding GTFS structure to graph");
     let mut stop_id_to_index: HashMap<&str, i64> = HashMap::new();
