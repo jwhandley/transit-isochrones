@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate rocket;
+use std::path::PathBuf;
+
 use chrono::NaiveTime;
 use clap::Parser;
 use kdtree::KdTree;
@@ -12,8 +14,8 @@ const MAX_SPEED: f64 = 75_000.0; // Meters per hour
 
 #[derive(Parser, Debug)]
 struct Args {
-    osm_path: String,
-    gtfs_path: String,
+    osm_path: PathBuf,
+    gtfs_path: PathBuf,
 }
 
 struct GraphState {

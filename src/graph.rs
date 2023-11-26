@@ -1,8 +1,10 @@
 use gtfs_structures::Gtfs;
 use kdtree::KdTree;
 use osmpbf::{Element, ElementReader};
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, path::Path};
 
+#[derive(Serialize, Deserialize)]
 pub struct Edge {
     pub origin: i64,
     pub destination: i64,
@@ -11,6 +13,7 @@ pub struct Edge {
     pub traversal_time: Option<u32>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Node {
     pub id: i64,
     pub x: f64,
@@ -29,7 +32,7 @@ impl Default for Node {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Graph {
     pub nodes: HashMap<i64, Node>,
 }
@@ -74,12 +77,17 @@ impl Graph {
     }
 }
 
-pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> (Graph, KdTree<f64, i64, [f64; 2]>) {
+pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> (Graph, KdTree<f64, i64, [f64; 2]>) {
     let mut osm_tree: KdTree<f64, i64, [f64; 2]> = KdTree::new(2);
     let mut graph = Graph::default();
     let mut max_index = 0;
     let reader = ElementReader::from_path(osm_path).unwrap();
-    let gtfs = Gtfs::from_path(gtfs_path).unwrap();
+    let gtfs = Gtfs::from_path(
+        gtfs_path
+            .to_str()
+            .expect("Should have been able to convert Path to str"),
+    )
+    .unwrap();
 
     let start_time = std::time::Instant::now();
     println!("Adding OSM structure to graph");
