@@ -15,7 +15,7 @@ pub struct Node {
     pub id: i64,
     pub x: f64,
     pub y: f64,
-    edges: Vec<Edge>
+    edges: Vec<Edge>,
 }
 
 impl Default for Node {
@@ -24,7 +24,7 @@ impl Default for Node {
             id: 0,
             x: 0.0,
             y: 0.0,
-            edges: Vec::new()
+            edges: Vec::new(),
         }
     }
 }
@@ -127,7 +127,6 @@ pub fn build_graph_osm(osm_path: &str, gtfs_path: &str) -> (Graph, KdTree<f64, i
         let lat = node.1.y;
         osm_tree.add([lon, lat], id).unwrap();
     }
-    
 
     println!("Adding GTFS structure to graph");
     let mut stop_id_to_index: HashMap<&str, i64> = HashMap::new();

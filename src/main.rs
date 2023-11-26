@@ -3,10 +3,10 @@ extern crate rocket;
 use chrono::NaiveTime;
 use clap::Parser;
 use kdtree::KdTree;
-use rocket::State;
+use rocket::{http::Status, State};
 use transit_isochrones::{build_graph_osm, create_contour, dijkstra, Graph};
 
-const GRID_SIZE: usize = 250;
+const GRID_SIZE: usize = 250; // Number of points per side of the grid
 const ONE_HOUR: f64 = 3600.0; // Seconds per hour
 const MAX_SPEED: f64 = 75_000.0; // Meters per hour
 
@@ -28,12 +28,12 @@ fn isochrone(
     lon: f64,
     arrival_time: &str,
     duration: u32,
-) -> Result<String, String> {
+) -> (Status, String) {
     let start_coords = &[lon, lat];
 
     let arrival_time = match NaiveTime::parse_from_str(arrival_time, "%H:%M:%S") {
         Ok(time) => time,
-        Err(_) => return Err("Invalid arrival time format. Please use HH:MM:SS.".to_string()),
+        Err(_) => return (Status::BadRequest, "Invalid arrival time".to_string()),
     };
 
     let start_time = std::time::Instant::now();
@@ -45,7 +45,12 @@ fn isochrone(
         duration,
     ) {
         Ok(tree) => tree,
-        Err(_) => return Err("Coordinates not in graph or other processing error.".to_string()),
+        Err(_) => {
+            return (
+                Status::InternalServerError,
+                "Error finding shortest path tree".to_string(),
+            )
+        }
     };
     println!(
         "Took {}ms to find shortest path tree",
@@ -63,8 +68,11 @@ fn isochrone(
     );
 
     match contour {
-        Ok(contour) => Ok(contour),
-        Err(_) => Err("Error creating contour".to_string()),
+        Ok(c) => (Status::Ok, c),
+        Err(_) => (
+            Status::InternalServerError,
+            "Error creating contour".to_string(),
+        ),
     }
 }
 
