@@ -120,8 +120,8 @@ pub fn dijkstra(
             let end_time = edge.end_time.unwrap_or(match edge.traversal_time {
                 Some(t) => new_cost + t,
                 None => {
-                    let start_node = graph.nodes.get(&edge.origin).unwrap();
-                    let end_node = graph.nodes.get(&edge.destination).unwrap();
+                    let start_node = graph.get_node(edge.origin).unwrap();
+                    let end_node = graph.get_node(edge.destination).unwrap();
                     let distance = haversine_distance(
                         &[start_node.x, start_node.y],
                         &[end_node.x, end_node.y],
@@ -140,8 +140,8 @@ pub fn dijkstra(
                 cost: end_time,
                 position: edge.destination,
                 coordinates: [
-                    graph.nodes.get(&edge.destination).unwrap().x,
-                    graph.nodes.get(&edge.destination).unwrap().y,
+                    graph.get_node(edge.destination).unwrap().x,
+                    graph.get_node(edge.destination).unwrap().y,
                 ],
             };
 
