@@ -13,7 +13,6 @@ pub struct Edge {
 
 
 pub struct Node {
-    pub id: i64,
     pub x: f64,
     pub y: f64,
     edges: Vec<Edge>,
@@ -22,7 +21,6 @@ pub struct Node {
 impl Default for Node {
     fn default() -> Self {
         Node {
-            id: 0,
             x: 0.0,
             y: 0.0,
             edges: Vec::new(),
@@ -57,7 +55,6 @@ impl Graph {
     pub fn add_node(&mut self, index: i64, x: f64, y: f64) {
         let node = self.nodes.entry(index).or_default();
 
-        node.id = index;
         node.x = x;
         node.y = y;
     }
