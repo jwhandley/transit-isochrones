@@ -1,10 +1,8 @@
 use gtfs_structures::Gtfs;
 use kdtree::KdTree;
 use osmpbf::{Element, ElementReader};
-use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
 
-#[derive(Serialize, Deserialize)]
 pub struct Edge {
     pub origin: i64,
     pub destination: i64,
@@ -13,7 +11,7 @@ pub struct Edge {
     pub traversal_time: Option<u32>,
 }
 
-#[derive(Serialize, Deserialize)]
+
 pub struct Node {
     pub id: i64,
     pub x: f64,
@@ -32,7 +30,7 @@ impl Default for Node {
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Graph {
     pub nodes: HashMap<i64, Node>,
 }
