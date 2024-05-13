@@ -118,22 +118,22 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
             }
             Element::Way(way) => {
                 if is_walkable_way(&way) {
-                    let mut nodes = way.refs();
-                    let mut prev_node = nodes.next().unwrap().to_string();
-                    for curr_node_id in nodes {
-                        let curr_node = curr_node_id.to_string();
+                    let refs: Vec<_> = way.refs().collect();
+
+                    for window in refs.windows(2) {
+                        let first = window[0].to_string();
+                        let second = window[1].to_string();
 
                         graph.add_edge(Edge::Walking(WalkingEdge {
-                            origin: prev_node.clone(),
-                            destination: curr_node.clone(),
+                            origin: first.clone(),
+                            destination: second.clone(),
                             traversal_time: None,
                         }));
                         graph.add_edge(Edge::Walking(WalkingEdge {
-                            origin: curr_node.clone(),
-                            destination: prev_node,
+                            origin: second,
+                            destination: first,
                             traversal_time: None,
                         }));
-                        prev_node = curr_node;
                     }
                 }
             }
@@ -206,17 +206,16 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
     }
 
     for (_, trip) in gtfs.trips.iter() {
-        let mut stop_times = trip.stop_times.iter();
+        for window in trip.stop_times.windows(2) {
+            let origin = window[0].stop.id.to_owned();
+            let destination = window[1].stop.id.to_owned();
 
-        let mut previous_stop = stop_times.next().unwrap();
-        for stop_time in stop_times {
             graph.add_edge(Edge::Transport(TransportEdge {
-                origin: previous_stop.stop.id.to_owned(),
-                destination: stop_time.stop.id.to_owned(),
-                start_time: previous_stop.departure_time.unwrap(),
-                end_time: stop_time.arrival_time.unwrap(),
+                origin,
+                destination,
+                start_time: window[0].departure_time.unwrap(),
+                end_time: window[1].arrival_time.unwrap(),
             }));
-            previous_stop = stop_time;
         }
     }
 
