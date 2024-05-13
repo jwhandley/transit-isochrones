@@ -1,10 +1,9 @@
+use crate::graph::nearest_node;
 use contour::ContourBuilder;
 use geojson::FeatureCollection;
 use geojson::GeoJson;
 use kdtree::KdTree;
 use rayon::prelude::*;
-
-use crate::graph::nearest_point;
 const OFF_ROAD_WALKING_SPEED: f64 = 1.0;
 const DEGREES_TO_METERS: f64 = 111_111.0;
 
@@ -30,7 +29,7 @@ pub fn create_contour(
                 let x = min_lon + dlon * i as f64;
                 let y = min_lat + dlat * j as f64;
 
-                let (distance, time) = nearest_point(tree, &[x, y]).unwrap();
+                let (distance, time) = nearest_node(tree, &[x, y]).unwrap();
 
                 let cost = time as f64 + distance / OFF_ROAD_WALKING_SPEED;
 
