@@ -18,14 +18,9 @@ struct Args {
     gtfs_path: PathBuf,
 }
 
-struct GraphState {
-    graph: Graph,
-    tree: KdTree<f64, i64, [f64; 2]>,
-}
-
 #[get("/?<lat>&<lon>&<arrival_time>&<duration>")]
 fn isochrone(
-    state: &State<GraphState>,
+    graph: &State<Graph>,
     lat: f64,
     lon: f64,
     arrival_time: &str,
@@ -39,31 +34,31 @@ fn isochrone(
     };
 
     let start_time = std::time::Instant::now();
-    let sptree = match dijkstra(
-        &state.graph,
-        &state.tree,
-        start_coords,
-        arrival_time,
-        duration,
-    ) {
+    let reachable_nodes = match dijkstra(&graph, start_coords, arrival_time, duration) {
         Ok(tree) => tree,
         Err(_) => {
             return (
                 Status::InternalServerError,
-                "Error finding shortest path tree".to_string(),
+                "Error finding reachable nodes".to_string(),
             )
         }
     };
+
     println!(
-        "Took {}ms to find shortest path tree",
-        start_time.elapsed().as_millis()
+        "Took {}ms to find {} reachable nodes",
+        start_time.elapsed().as_millis(),
+        reachable_nodes.len()
     );
 
     let start_time = std::time::Instant::now();
-    // Scale the size of the contour based on the duration
+    let mut sptree = KdTree::new(2);
+    for (node_id, dist) in reachable_nodes {
+        let node = graph.get_node(&node_id).unwrap();
+        sptree.add([node.lon, node.lat], dist).unwrap();
+    }
+
     let size = MAX_SPEED * duration as f64 / ONE_HOUR;
     let contour = create_contour(start_coords, size, GRID_SIZE, &sptree, duration);
-
     println!(
         "Took {}ms to create contour",
         start_time.elapsed().as_millis()
@@ -80,20 +75,21 @@ fn isochrone(
 
 #[main]
 async fn main() -> Result<(), rocket::Error> {
-    let args = Args::parse();
-    dbg!(&args);
+    let Args {
+        osm_path,
+        gtfs_path,
+    } = Args::parse();
 
     // Build the graph
-    let (graph, tree) = build_graph_osm(&args.osm_path, &args.gtfs_path);
-    let graph_state = GraphState { graph, tree };
+    let graph = build_graph_osm(&osm_path, &gtfs_path);
 
     // Start the server
     rocket::build()
         .configure(rocket::Config {
-            workers: num_cpus::get(), // sets the number of workers to the number of CPU cores
+            workers: num_cpus::get(),
             ..rocket::Config::default()
         })
-        .manage(graph_state)
+        .manage(graph)
         .mount("/isochrone", routes![isochrone])
         .launch()
         .await?;

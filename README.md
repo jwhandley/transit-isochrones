@@ -10,16 +10,10 @@ You need to have Rust installed to run the server. You can run it using the foll
 cargo run --release -- [path/to/osm/file.osm.pbf] [path/to/gtfs.zip]
 ```
 
-Once the server is running, you can send GET requests to receive isochrones. Here is an example using Python assuming the server is running locally:
+Once the server is running, you can send GET requests to receive isochrones.
 
-```python
-import requests
-
-def get_isochrone(lat, lon, arrival_time, duration):
-    url = f"localhost:8000/isochrone?lat={lat}&lon={lon}&arrival_time={arrival_time}&duration={duration}"
-    response = requests.get(url)
-
-    return response.text
+```bash
+curl localhost:8000/isochrone?lat=<latitude>&lon=<longitude>&arrival_time=<arrival_time>&duration=<duration>
 ```
 
 ## Todo

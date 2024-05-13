@@ -3,68 +3,85 @@ use kdtree::KdTree;
 use osmpbf::{Element, ElementReader};
 use std::{collections::HashMap, path::Path};
 
-pub struct Edge {
-    pub origin: i64,
-    pub destination: i64,
-    pub start_time: Option<u32>,
-    pub end_time: Option<u32>,
+pub struct TransportEdge {
+    pub origin: String,
+    pub destination: String,
+    pub start_time: u32,
+    pub end_time: u32,
+}
+
+pub struct WalkingEdge {
+    pub origin: String,
+    pub destination: String,
     pub traversal_time: Option<u32>,
 }
 
+pub enum Edge {
+    Walking(WalkingEdge),
+    Transport(TransportEdge),
+}
+
+impl Edge {
+    pub fn dest(&self) -> &str {
+        match &self {
+            Edge::Walking(e) => &e.destination,
+            Edge::Transport(e) => &e.destination,
+        }
+    }
+}
 
 pub struct Node {
-    pub x: f64,
-    pub y: f64,
+    pub lon: f64,
+    pub lat: f64,
     edges: Vec<Edge>,
 }
 
 impl Default for Node {
     fn default() -> Self {
         Node {
-            x: 0.0,
-            y: 0.0,
+            lon: 0.0,
+            lat: 0.0,
             edges: Vec::new(),
         }
     }
 }
 
-#[derive(Default)]
 pub struct Graph {
-    pub nodes: HashMap<i64, Node>,
+    pub nodes: HashMap<String, Node>,
+    pub tree: KdTree<f64, String, [f64; 2]>,
+}
+
+impl Default for Graph {
+    fn default() -> Self {
+        Self {
+            nodes: HashMap::new(),
+            tree: KdTree::new(2),
+        }
+    }
 }
 
 impl Graph {
-    pub fn add_edge(
-        &mut self,
-        origin: i64,
-        destination: i64,
-        start_time: Option<u32>,
-        end_time: Option<u32>,
-        traversal_time: Option<u32>,
-    ) {
-        let edge = Edge {
-            origin,
-            destination,
-            start_time,
-            end_time,
-            traversal_time,
+    pub fn add_edge(&mut self, edge: Edge) {
+        let origin = match &edge {
+            Edge::Walking(edge) => edge.origin.clone(),
+            Edge::Transport(edge) => edge.origin.clone(),
         };
         self.nodes.entry(origin).or_default().edges.push(edge);
     }
 
-    pub fn add_node(&mut self, index: i64, x: f64, y: f64) {
+    pub fn add_node(&mut self, index: String, x: f64, y: f64) {
         let node = self.nodes.entry(index).or_default();
 
-        node.x = x;
-        node.y = y;
+        node.lon = x;
+        node.lat = y;
     }
 
-    pub fn neighbors(&self, index: i64) -> Option<&Vec<Edge>> {
-        self.nodes.get(&index).map(|node| &node.edges)
+    pub fn neighbors(&self, index: &str) -> Option<&Vec<Edge>> {
+        self.nodes.get(index).map(|node| &node.edges)
     }
 
-    pub fn get_node(&self, index: i64) -> Option<&Node> {
-        self.nodes.get(&index)
+    pub fn get_node(&self, index: &str) -> Option<&Node> {
+        self.nodes.get(index)
     }
 
     pub fn clear_edgeless_nodes(&mut self) {
@@ -72,10 +89,9 @@ impl Graph {
     }
 }
 
-pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> (Graph, KdTree<f64, i64, [f64; 2]>) {
-    let mut osm_tree: KdTree<f64, i64, [f64; 2]> = KdTree::new(2);
+pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
     let mut graph = Graph::default();
-    let mut max_index = 0;
+
     let reader = ElementReader::from_path(osm_path).unwrap();
     let gtfs = Gtfs::from_path(
         gtfs_path
@@ -90,8 +106,7 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> (Graph, KdTree<f64,
         .for_each(|element| match element {
             Element::Node(osm_node) => {
                 if is_walkable_node(&osm_node) {
-                    let index = osm_node.id();
-                    max_index = max_index.max(index);
+                    let index = osm_node.id().to_string();
                     let x = osm_node.lon();
                     let y = osm_node.lat();
                     graph.add_node(index, x, y);
@@ -100,22 +115,29 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> (Graph, KdTree<f64,
             Element::Way(way) => {
                 if is_walkable_way(&way) {
                     let mut nodes = way.refs();
-                    let mut prev_node = nodes.next();
-                    for curr_node in nodes {
-                        max_index = max_index.max(curr_node);
+                    let mut prev_node = nodes.next().map(|id| id.to_string());
+                    for curr_node_id in nodes {
+                        let curr_node = curr_node_id.to_string();
                         if let Some(prev_id) = prev_node {
-                            graph.add_edge(prev_id, curr_node, None, None, None);
-                            graph.add_edge(curr_node, prev_id, None, None, None);
+                            graph.add_edge(Edge::Walking(WalkingEdge {
+                                origin: prev_id.clone(),
+                                destination: curr_node.clone(),
+                                traversal_time: None,
+                            }));
+                            graph.add_edge(Edge::Walking(WalkingEdge {
+                                origin: curr_node.clone(),
+                                destination: prev_id,
+                                traversal_time: None,
+                            }));
                             prev_node = Some(curr_node);
                         }
                     }
                 }
             }
             Element::DenseNode(dense_node) => {
-                max_index = max_index.max(dense_node.id());
                 let x = dense_node.lon();
                 let y = dense_node.lat();
-                let id = dense_node.id();
+                let id = dense_node.id().to_string();
                 graph.add_node(id, x, y);
             }
             _ => {}
@@ -125,48 +147,56 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> (Graph, KdTree<f64,
     graph.clear_edgeless_nodes();
 
     for node in graph.nodes.iter() {
-        let id = *node.0;
-        let lon = node.1.x;
-        let lat = node.1.y;
-        osm_tree.add([lon, lat], id).unwrap();
+        let id = node.0.clone();
+        let lon = node.1.lon;
+        let lat = node.1.lat;
+        graph.tree.add([lon, lat], id).unwrap();
     }
 
     println!("Adding GTFS structure to graph");
-    let mut stop_id_to_index: HashMap<&str, i64> = HashMap::new();
     for (stop_id, stop) in &gtfs.stops {
         let x = stop.longitude.unwrap();
         let y = stop.latitude.unwrap();
 
-        let (distance, osm_node) = nearest_node(&osm_tree, &[x, y]).expect("No nearest node found");
+        let (distance, osm_node) =
+            nearest_node(&graph.tree, &[x, y]).expect("No nearest node found");
 
-        let index = *stop_id_to_index.entry(stop_id.as_str()).or_insert({
-            max_index += 1;
-            max_index
-        });
-
-        graph.add_node(index, x, y);
+        graph.add_node(stop_id.to_owned(), x, y);
 
         let traversal_time = (distance / crate::dijkstra::WALKING_SPEED) as u32;
-        graph.add_edge(index, osm_node, None, None, Some(traversal_time));
-        graph.add_edge(osm_node, index, None, None, Some(traversal_time));
+        graph.add_edge(Edge::Walking(WalkingEdge {
+            origin: stop_id.to_owned(),
+            destination: osm_node.clone(),
+            traversal_time: Some(traversal_time),
+        }));
+        graph.add_edge(Edge::Walking(WalkingEdge {
+            origin: osm_node.clone(),
+            destination: stop_id.clone(),
+            traversal_time: Some(traversal_time),
+        }));
 
-        let from_index = *stop_id_to_index.get(stop_id.as_str()).unwrap();
         for path in stop.pathways.iter() {
-            let to_id = path.to_stop_id.as_str();
-
-            let to_index = *stop_id_to_index.entry(to_id).or_insert({
-                max_index += 1;
-
-                max_index
-            });
+            let to_id = path.to_stop_id.clone();
 
             match path.is_bidirectional {
                 gtfs_structures::PathwayDirectionType::Unidirectional => {
-                    graph.add_edge(from_index, to_index, None, None, path.traversal_time);
+                    graph.add_edge(Edge::Walking(WalkingEdge {
+                        origin: stop_id.to_owned(),
+                        destination: to_id.clone(),
+                        traversal_time: path.traversal_time,
+                    }));
                 }
                 gtfs_structures::PathwayDirectionType::Bidirectional => {
-                    graph.add_edge(from_index, to_index, None, None, path.traversal_time);
-                    graph.add_edge(to_index, from_index, None, None, path.traversal_time);
+                    graph.add_edge(Edge::Walking(WalkingEdge {
+                        origin: stop_id.to_owned(),
+                        destination: to_id.clone(),
+                        traversal_time: path.traversal_time,
+                    }));
+                    graph.add_edge(Edge::Walking(WalkingEdge {
+                        origin: to_id.to_owned(),
+                        destination: stop_id.clone(),
+                        traversal_time: path.traversal_time,
+                    }));
                 }
             }
         }
@@ -176,34 +206,27 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> (Graph, KdTree<f64,
         let mut stop_times = trip.stop_times.iter();
         let mut previous_stop = stop_times.next().unwrap();
         for stop_time in stop_times {
-            let prev_index = *stop_id_to_index
-                .get(previous_stop.stop.id.as_str())
-                .unwrap();
-            let curr_index = *stop_id_to_index.get(stop_time.stop.id.as_str()).unwrap();
-
-            graph.add_edge(
-                prev_index,
-                curr_index,
-                previous_stop.departure_time,
-                stop_time.arrival_time,
-                Some(stop_time.arrival_time.unwrap() - previous_stop.departure_time.unwrap()),
-            );
+            graph.add_edge(Edge::Transport(TransportEdge {
+                origin: previous_stop.stop.id.to_owned(),
+                destination: stop_time.stop.id.to_owned(),
+                start_time: previous_stop.departure_time.unwrap(),
+                end_time: stop_time.arrival_time.unwrap(),
+            }));
             previous_stop = stop_time;
         }
     }
 
     for stop in gtfs.stops.values() {
-        let id = stop_id_to_index.get(stop.id.as_str()).unwrap();
         let lon = stop.longitude.unwrap();
         let lat = stop.latitude.unwrap();
-        osm_tree.add([lon, lat], *id).unwrap();
+        graph.tree.add([lon, lat], stop.id.to_owned()).unwrap();
     }
 
     println!(
         "Took {}ms to build the graph",
         start_time.elapsed().as_millis()
     );
-    (graph, osm_tree)
+    graph
 }
 
 fn is_walkable_node(osm_node: &osmpbf::Node) -> bool {
@@ -248,14 +271,8 @@ fn is_walkable_way(way: &osmpbf::Way) -> bool {
     is_highway_walkable && foot_allowed && service_allowed
 }
 
-fn nearest_node(tree: &KdTree<f64, i64, [f64; 2]>, coords: &[f64; 2]) -> Option<(f64, i64)> {
-    let nearest = tree
-        .nearest(coords, 1, &crate::dijkstra::haversine_distance)
-        .expect("Should have been able to find node");
-
-    if nearest.is_empty() {
-        None
-    } else {
-        Some((nearest[0].0, *nearest[0].1))
-    }
+fn nearest_node(tree: &KdTree<f64, String, [f64; 2]>, coords: &[f64; 2]) -> Option<(f64, String)> {
+    tree.nearest(coords, 1, &crate::dijkstra::haversine_distance)
+        .ok()
+        .map(|nearest| (nearest[0].0, nearest[0].1.clone()))
 }

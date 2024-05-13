@@ -1,9 +1,10 @@
 use contour::ContourBuilder;
 use geojson::FeatureCollection;
 use geojson::GeoJson;
-use kdtree::distance::squared_euclidean;
 use kdtree::KdTree;
 use rayon::prelude::*;
+
+use crate::dijkstra::haversine_distance;
 const OFF_ROAD_WALKING_SPEED: f64 = 1.0;
 const DEGREES_TO_METERS: f64 = 111_111.0;
 
@@ -29,11 +30,11 @@ pub fn create_contour(
                 let x = min_lon + dlon * i as f64;
                 let y = min_lat + dlat * j as f64;
 
-                let nearest = tree.nearest(&[x, y], 1, &squared_euclidean).unwrap();
+                let nearest = tree.nearest(&[x, y], 1, &haversine_distance).unwrap();
 
                 let nearest_node = nearest[0];
                 let time = *nearest_node.1 as f64;
-                let distance = nearest_node.0.sqrt() * DEGREES_TO_METERS;
+                let distance = nearest_node.0;
 
                 let cost = time + distance / OFF_ROAD_WALKING_SPEED;
 
@@ -42,7 +43,7 @@ pub fn create_contour(
         })
         .collect::<Vec<f64>>();
 
-    let features = ContourBuilder::new(resolution as u32, resolution as u32, true)
+    let features = ContourBuilder::new(resolution, resolution, true)
         .x_origin(min_lon)
         .y_origin(min_lat)
         .x_step(dlon)
