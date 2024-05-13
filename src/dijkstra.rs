@@ -55,8 +55,7 @@ pub fn dijkstra(
     let mut queue = BinaryHeap::new();
     let start_time = arrival_time.num_seconds_from_midnight() - duration;
 
-    let (distance, start_node) =
-        nearest_node(&graph.tree, start_coords).ok_or(anyhow!("No nearest node"))?;
+    let (distance, start_node) = nearest_node(&graph.tree, start_coords)?;
 
     if distance > MAX_DISTANCE {
         Err(anyhow!("Start node is too far away"))?;

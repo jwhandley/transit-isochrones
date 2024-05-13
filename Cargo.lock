@@ -2463,7 +2463,6 @@ dependencies = [
  "kdtree",
  "num_cpus",
  "osmpbf",
- "rayon",
  "rocket",
  "serde",
 ]

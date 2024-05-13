@@ -3,7 +3,6 @@ use contour::ContourBuilder;
 use geojson::FeatureCollection;
 use geojson::GeoJson;
 use kdtree::KdTree;
-use rayon::prelude::*;
 const OFF_ROAD_WALKING_SPEED: f64 = 1.0;
 const DEGREES_TO_METERS: f64 = 111_111.0;
 
@@ -22,21 +21,19 @@ pub fn create_contour(
     let min_lon =
         midpoint[0] - half_grid_size / (DEGREES_TO_METERS * midpoint[1].to_radians().cos());
 
-    let values = (0..resolution)
-        .into_par_iter()
-        .flat_map(|i| {
-            (0..resolution).into_par_iter().map(move |j| {
-                let x = min_lon + dlon * i as f64;
-                let y = min_lat + dlat * j as f64;
+    let mut values = vec![];
+    for i in 0..resolution {
+        for j in 0..resolution {
+            let x = min_lon + dlon * i as f64;
+            let y = min_lat + dlat * j as f64;
 
-                let (distance, time) = nearest_node(tree, &[x, y]).unwrap();
+            let (distance, time) = nearest_node(tree, &[x, y])?;
 
-                let cost = time as f64 + distance / OFF_ROAD_WALKING_SPEED;
+            let cost = time as f64 + distance / OFF_ROAD_WALKING_SPEED;
 
-                -cost
-            })
-        })
-        .collect::<Vec<f64>>();
+            values.push(-cost);
+        }
+    }
 
     let features = ContourBuilder::new(resolution, resolution, true)
         .x_origin(min_lon)

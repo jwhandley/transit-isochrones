@@ -275,11 +275,13 @@ fn is_walkable_way(way: &osmpbf::Way) -> bool {
     is_highway_walkable && foot_allowed && service_allowed
 }
 
-pub fn nearest_node<T>(tree: &KdTree<f64, T, [f64; 2]>, coords: &[f64; 2]) -> Option<(f64, T)>
+pub fn nearest_node<T>(
+    tree: &KdTree<f64, T, [f64; 2]>,
+    coords: &[f64; 2],
+) -> Result<(f64, T), anyhow::Error>
 where
     T: Eq + Clone,
 {
-    tree.nearest(coords, 1, &crate::dijkstra::haversine_distance)
-        .ok()
-        .map(|nearest| (nearest[0].0, nearest[0].1.clone()))
+    let nearest = tree.nearest(coords, 1, &crate::dijkstra::haversine_distance)?;
+    Ok((nearest[0].0, nearest[0].1.clone()))
 }
