@@ -1,18 +1,18 @@
 use gtfs_structures::Gtfs;
 use kdtree::KdTree;
 use osmpbf::{Element, ElementReader};
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 pub struct TransportEdge {
-    pub origin: String,
-    pub destination: String,
+    pub origin: Arc<String>,
+    pub destination: Arc<String>,
     pub start_time: u32,
     pub end_time: u32,
 }
 
 pub struct WalkingEdge {
-    pub origin: String,
-    pub destination: String,
+    pub origin: Arc<String>,
+    pub destination: Arc<String>,
     pub traversal_time: Option<u32>,
 }
 
@@ -22,10 +22,17 @@ pub enum Edge {
 }
 
 impl Edge {
-    pub fn dest(&self) -> &str {
+    pub fn dest(&self) -> Arc<String> {
         match &self {
-            Edge::Walking(e) => &e.destination,
-            Edge::Transport(e) => &e.destination,
+            Edge::Walking(e) => e.destination.clone(),
+            Edge::Transport(e) => e.destination.clone(),
+        }
+    }
+
+    pub fn origin(&self) -> Arc<String> {
+        match &self {
+            Edge::Walking(e) => e.origin.clone(),
+            Edge::Transport(e) => e.origin.clone(),
         }
     }
 }
@@ -47,8 +54,8 @@ impl Default for Node {
 }
 
 pub struct Graph {
-    pub nodes: HashMap<String, Node>,
-    pub tree: KdTree<f64, String, [f64; 2]>,
+    pub nodes: HashMap<Arc<String>, Node>,
+    pub tree: KdTree<f64, Arc<String>, [f64; 2]>,
 }
 
 impl Default for Graph {
@@ -62,26 +69,23 @@ impl Default for Graph {
 
 impl Graph {
     pub fn add_edge(&mut self, edge: Edge) {
-        let origin = match &edge {
-            Edge::Walking(edge) => edge.origin.clone(),
-            Edge::Transport(edge) => edge.origin.clone(),
-        };
+        let origin = edge.origin();
         self.nodes.entry(origin).or_default().edges.push(edge);
     }
 
-    pub fn add_node(&mut self, index: String, x: f64, y: f64) {
+    pub fn add_node(&mut self, index: Arc<String>, x: f64, y: f64) {
         let node = self.nodes.entry(index).or_default();
 
         node.lon = x;
         node.lat = y;
     }
 
-    pub fn neighbors(&self, index: &str) -> Option<&Vec<Edge>> {
-        self.nodes.get(index).map(|node| &node.edges)
+    pub fn neighbors(&self, index: Arc<String>) -> Option<&Vec<Edge>> {
+        self.nodes.get(&index).map(|node| &node.edges)
     }
 
-    pub fn get_node(&self, index: &str) -> Option<&Node> {
-        self.nodes.get(index)
+    pub fn get_node(&self, index: Arc<String>) -> Option<&Node> {
+        self.nodes.get(&index)
     }
 
     pub fn clear_edgeless_nodes(&mut self) {
@@ -106,7 +110,7 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
         .for_each(|element| match element {
             Element::Node(osm_node) => {
                 if is_walkable_node(&osm_node) {
-                    let index = osm_node.id().to_string();
+                    let index = Arc::new(osm_node.id().to_string());
                     let x = osm_node.lon();
                     let y = osm_node.lat();
                     graph.add_node(index, x, y);
@@ -115,9 +119,9 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
             Element::Way(way) => {
                 if is_walkable_way(&way) {
                     let mut nodes = way.refs();
-                    let mut prev_node = nodes.next().map(|id| id.to_string());
+                    let mut prev_node = nodes.next().map(|id| Arc::new(id.to_string()));
                     for curr_node_id in nodes {
-                        let curr_node = curr_node_id.to_string();
+                        let curr_node = Arc::new(curr_node_id.to_string());
                         if let Some(prev_id) = prev_node {
                             graph.add_edge(Edge::Walking(WalkingEdge {
                                 origin: prev_id.clone(),
@@ -137,7 +141,7 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
             Element::DenseNode(dense_node) => {
                 let x = dense_node.lon();
                 let y = dense_node.lat();
-                let id = dense_node.id().to_string();
+                let id = Arc::new(dense_node.id().to_string());
                 graph.add_node(id, x, y);
             }
             _ => {}
@@ -155,45 +159,46 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
 
     println!("Adding GTFS structure to graph");
     for (stop_id, stop) in &gtfs.stops {
+        let stop_id = Arc::new(stop_id.to_owned());
         let x = stop.longitude.unwrap();
         let y = stop.latitude.unwrap();
 
         let (distance, osm_node) =
             nearest_point(&graph.tree, &[x, y]).expect("No nearest node found");
 
-        graph.add_node(stop_id.to_owned(), x, y);
+        graph.add_node(stop_id.clone(), x, y);
 
         let traversal_time = (distance / crate::dijkstra::WALKING_SPEED) as u32;
         graph.add_edge(Edge::Walking(WalkingEdge {
-            origin: stop_id.to_owned(),
+            origin: stop_id.clone(),
             destination: osm_node.clone(),
             traversal_time: Some(traversal_time),
         }));
         graph.add_edge(Edge::Walking(WalkingEdge {
-            origin: osm_node.clone(),
+            origin: osm_node,
             destination: stop_id.clone(),
             traversal_time: Some(traversal_time),
         }));
 
         for path in stop.pathways.iter() {
-            let to_id = path.to_stop_id.clone();
+            let to_id = Arc::new(path.to_stop_id.clone());
 
             match path.is_bidirectional {
                 gtfs_structures::PathwayDirectionType::Unidirectional => {
                     graph.add_edge(Edge::Walking(WalkingEdge {
-                        origin: stop_id.to_owned(),
-                        destination: to_id.clone(),
+                        origin: stop_id.clone(),
+                        destination: to_id,
                         traversal_time: path.traversal_time,
                     }));
                 }
                 gtfs_structures::PathwayDirectionType::Bidirectional => {
                     graph.add_edge(Edge::Walking(WalkingEdge {
-                        origin: stop_id.to_owned(),
+                        origin: stop_id.clone(),
                         destination: to_id.clone(),
                         traversal_time: path.traversal_time,
                     }));
                     graph.add_edge(Edge::Walking(WalkingEdge {
-                        origin: to_id.to_owned(),
+                        origin: to_id.clone(),
                         destination: stop_id.clone(),
                         traversal_time: path.traversal_time,
                     }));
@@ -208,8 +213,8 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
         let mut previous_stop = stop_times.next().unwrap();
         for stop_time in stop_times {
             graph.add_edge(Edge::Transport(TransportEdge {
-                origin: previous_stop.stop.id.to_owned(),
-                destination: stop_time.stop.id.to_owned(),
+                origin: Arc::new(previous_stop.stop.id.to_owned()),
+                destination: Arc::new(stop_time.stop.id.to_owned()),
                 start_time: previous_stop.departure_time.unwrap(),
                 end_time: stop_time.arrival_time.unwrap(),
             }));
@@ -220,7 +225,10 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
     for stop in gtfs.stops.values() {
         let lon = stop.longitude.unwrap();
         let lat = stop.latitude.unwrap();
-        graph.tree.add([lon, lat], stop.id.to_owned()).unwrap();
+        graph
+            .tree
+            .add([lon, lat], Arc::new(stop.id.to_owned()))
+            .unwrap();
     }
 
     println!(

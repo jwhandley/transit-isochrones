@@ -34,7 +34,7 @@ fn isochrone(
     };
 
     let start_time = std::time::Instant::now();
-    let reachable_nodes = match dijkstra(&graph, start_coords, arrival_time, duration) {
+    let reachable_nodes = match dijkstra(graph, start_coords, arrival_time, duration) {
         Ok(tree) => tree,
         Err(_) => {
             return (
@@ -53,7 +53,7 @@ fn isochrone(
     let start_time = std::time::Instant::now();
     let mut sptree = KdTree::new(2);
     for (node_id, dist) in reachable_nodes {
-        let node = graph.get_node(&node_id).unwrap();
+        let node = graph.get_node(node_id).unwrap();
         sptree.add([node.lon, node.lat], dist).unwrap();
     }
 

@@ -30,7 +30,7 @@ pub fn create_contour(
                 let x = min_lon + dlon * i as f64;
                 let y = min_lat + dlat * j as f64;
 
-                let (distance, time) = nearest_point(&tree, &[x, y]).unwrap();
+                let (distance, time) = nearest_point(tree, &[x, y]).unwrap();
 
                 let cost = time as f64 + distance / OFF_ROAD_WALKING_SPEED;
 
