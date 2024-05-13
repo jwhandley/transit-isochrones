@@ -159,7 +159,7 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
         let y = stop.latitude.unwrap();
 
         let (distance, osm_node) =
-            nearest_node(&graph.tree, &[x, y]).expect("No nearest node found");
+            nearest_point(&graph.tree, &[x, y]).expect("No nearest node found");
 
         graph.add_node(stop_id.to_owned(), x, y);
 
@@ -204,6 +204,7 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
 
     for (_, trip) in gtfs.trips.iter() {
         let mut stop_times = trip.stop_times.iter();
+
         let mut previous_stop = stop_times.next().unwrap();
         for stop_time in stop_times {
             graph.add_edge(Edge::Transport(TransportEdge {
@@ -226,6 +227,7 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
         "Took {}ms to build the graph",
         start_time.elapsed().as_millis()
     );
+
     graph
 }
 
@@ -271,7 +273,10 @@ fn is_walkable_way(way: &osmpbf::Way) -> bool {
     is_highway_walkable && foot_allowed && service_allowed
 }
 
-fn nearest_node(tree: &KdTree<f64, String, [f64; 2]>, coords: &[f64; 2]) -> Option<(f64, String)> {
+pub fn nearest_point<T>(tree: &KdTree<f64, T, [f64; 2]>, coords: &[f64; 2]) -> Option<(f64, T)>
+where
+    T: Eq + Clone,
+{
     tree.nearest(coords, 1, &crate::dijkstra::haversine_distance)
         .ok()
         .map(|nearest| (nearest[0].0, nearest[0].1.clone()))

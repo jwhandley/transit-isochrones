@@ -4,7 +4,7 @@ use geojson::GeoJson;
 use kdtree::KdTree;
 use rayon::prelude::*;
 
-use crate::dijkstra::haversine_distance;
+use crate::graph::nearest_point;
 const OFF_ROAD_WALKING_SPEED: f64 = 1.0;
 const DEGREES_TO_METERS: f64 = 111_111.0;
 
@@ -30,13 +30,9 @@ pub fn create_contour(
                 let x = min_lon + dlon * i as f64;
                 let y = min_lat + dlat * j as f64;
 
-                let nearest = tree.nearest(&[x, y], 1, &haversine_distance).unwrap();
+                let (distance, time) = nearest_point(&tree, &[x, y]).unwrap();
 
-                let nearest_node = nearest[0];
-                let time = *nearest_node.1 as f64;
-                let distance = nearest_node.0;
-
-                let cost = time + distance / OFF_ROAD_WALKING_SPEED;
+                let cost = time as f64 + distance / OFF_ROAD_WALKING_SPEED;
 
                 -cost
             })

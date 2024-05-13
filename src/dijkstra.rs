@@ -1,5 +1,7 @@
+use crate::graph::nearest_point;
 use crate::graph::Edge;
 use crate::Graph;
+use anyhow::anyhow;
 use chrono::NaiveTime;
 use chrono::Timelike;
 use std::cmp::Ordering;
@@ -53,15 +55,11 @@ pub fn dijkstra(
     let mut queue = BinaryHeap::new();
     let start_time = arrival_time.num_seconds_from_midnight() - duration;
 
-    let nearest = graph
-        .tree
-        .nearest(start_coords, 1, &haversine_distance)
-        .expect("No nearest node");
-    let start_node = nearest[0].1.clone();
-    let distance = nearest[0].0;
+    let (distance, start_node) =
+        nearest_point(&graph.tree, start_coords).ok_or(anyhow!("No nearest node"))?;
 
     if distance > MAX_DISTANCE {
-        Err(anyhow::anyhow!("Start node is too far away"))?;
+        Err(anyhow!("Start node is too far away"))?;
     }
 
     let start_cost = (distance / WALKING_SPEED) as u32;
