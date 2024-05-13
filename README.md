@@ -13,7 +13,7 @@ cargo run --release -- [path/to/osm/file.osm.pbf] [path/to/gtfs.zip]
 Once the server is running, you can send GET requests to receive isochrones.
 
 ```bash
-curl localhost:8000/isochrone?lat=<latitude>&lon=<longitude>&arrival_time=<arrival_time>&duration=<duration>
+curl localhost:8000/isochrone?lat=<Latitude>&lon=<Longitude>&arrival_time=<HH:MM:SS>&duration=<Seconds>
 ```
 
 ## Todo

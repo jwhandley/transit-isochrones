@@ -1,10 +1,13 @@
+use crate::graph::nearest_point;
 use crate::graph::Edge;
 use crate::Graph;
+use anyhow::anyhow;
 use chrono::NaiveTime;
 use chrono::Timelike;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub const WALKING_SPEED: f64 = 1.0;
 const RADIUS_EARTH_KM: f64 = 6371.0;
@@ -25,7 +28,7 @@ pub fn haversine_distance(coord1: &[f64], coord2: &[f64]) -> f64 {
 #[derive(Clone, PartialEq, Eq)]
 struct State {
     cost: u32,
-    position: String,
+    position: Arc<String>,
 }
 
 impl Ord for State {
@@ -48,20 +51,16 @@ pub fn dijkstra(
     start_coords: &[f64; 2],
     arrival_time: NaiveTime,
     duration: u32,
-) -> Result<HashMap<String, u32>, anyhow::Error> {
-    let mut visited: HashMap<String, u32> = HashMap::new();
+) -> Result<HashMap<Arc<String>, u32>, anyhow::Error> {
+    let mut visited: HashMap<Arc<String>, u32> = HashMap::new();
     let mut queue = BinaryHeap::new();
     let start_time = arrival_time.num_seconds_from_midnight() - duration;
 
-    let nearest = graph
-        .tree
-        .nearest(start_coords, 1, &haversine_distance)
-        .expect("No nearest node");
-    let start_node = nearest[0].1.clone();
-    let distance = nearest[0].0;
+    let (distance, start_node) =
+        nearest_point(&graph.tree, start_coords).ok_or(anyhow!("No nearest node"))?;
 
     if distance > MAX_DISTANCE {
-        Err(anyhow::anyhow!("Start node is too far away"))?;
+        Err(anyhow!("Start node is too far away"))?;
     }
 
     let start_cost = (distance / WALKING_SPEED) as u32;
@@ -77,7 +76,7 @@ pub fn dijkstra(
     }) = queue.pop()
     {
         graph
-            .neighbors(&position)
+            .neighbors(position)
             .unwrap()
             .iter()
             .filter(|edge| match edge {
@@ -89,8 +88,8 @@ pub fn dijkstra(
                     Edge::Walking(e) => match e.traversal_time {
                         Some(time) => current_cost + time,
                         None => {
-                            let start_node = graph.get_node(&e.origin).unwrap();
-                            let end_node = graph.get_node(&e.destination).unwrap();
+                            let start_node = graph.get_node(edge.origin()).unwrap();
+                            let end_node = graph.get_node(edge.dest()).unwrap();
                             let distance = haversine_distance(
                                 &[start_node.lon, start_node.lat],
                                 &[end_node.lon, end_node.lat],
@@ -103,12 +102,12 @@ pub fn dijkstra(
                     Edge::Transport(e) => e.end_time - start_time,
                 };
 
-                let old_cost = visited.get(edge.dest()).unwrap_or(&u32::MAX);
+                let old_cost = visited.get(&edge.dest()).unwrap_or(&u32::MAX);
                 if old_cost > &new_cost && new_cost <= duration {
-                    visited.insert(edge.dest().to_owned(), new_cost);
+                    visited.insert(edge.dest().clone(), new_cost);
                     let next_state = State {
                         cost: new_cost,
-                        position: edge.dest().to_owned(),
+                        position: edge.dest(),
                     };
                     queue.push(next_state);
                 }
