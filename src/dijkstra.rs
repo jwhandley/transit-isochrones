@@ -1,4 +1,4 @@
-use crate::graph::nearest_point;
+use crate::graph::nearest_node;
 use crate::graph::Edge;
 use crate::Graph;
 use anyhow::anyhow;
@@ -7,7 +7,6 @@ use chrono::Timelike;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 pub const WALKING_SPEED: f64 = 1.0;
 const RADIUS_EARTH_KM: f64 = 6371.0;
@@ -28,7 +27,7 @@ pub fn haversine_distance(coord1: &[f64], coord2: &[f64]) -> f64 {
 #[derive(Clone, PartialEq, Eq)]
 struct State {
     cost: u32,
-    position: Arc<String>,
+    position: String,
 }
 
 impl Ord for State {
@@ -51,13 +50,13 @@ pub fn dijkstra(
     start_coords: &[f64; 2],
     arrival_time: NaiveTime,
     duration: u32,
-) -> Result<HashMap<Arc<String>, u32>, anyhow::Error> {
-    let mut visited: HashMap<Arc<String>, u32> = HashMap::new();
+) -> Result<HashMap<String, u32>, anyhow::Error> {
+    let mut visited: HashMap<String, u32> = HashMap::new();
     let mut queue = BinaryHeap::new();
     let start_time = arrival_time.num_seconds_from_midnight() - duration;
 
     let (distance, start_node) =
-        nearest_point(&graph.tree, start_coords).ok_or(anyhow!("No nearest node"))?;
+        nearest_node(&graph.tree, start_coords).ok_or(anyhow!("No nearest node"))?;
 
     if distance > MAX_DISTANCE {
         Err(anyhow!("Start node is too far away"))?;
@@ -76,7 +75,7 @@ pub fn dijkstra(
     }) = queue.pop()
     {
         graph
-            .neighbors(position)
+            .neighbors(&position)
             .unwrap()
             .iter()
             .filter(|edge| match edge {
@@ -88,8 +87,8 @@ pub fn dijkstra(
                     Edge::Walking(e) => match e.traversal_time {
                         Some(time) => current_cost + time,
                         None => {
-                            let start_node = graph.get_node(edge.origin()).unwrap();
-                            let end_node = graph.get_node(edge.dest()).unwrap();
+                            let start_node = graph.get_node(&edge.origin()).unwrap();
+                            let end_node = graph.get_node(&edge.dest()).unwrap();
                             let distance = haversine_distance(
                                 &[start_node.lon, start_node.lat],
                                 &[end_node.lon, end_node.lat],
