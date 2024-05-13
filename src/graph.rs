@@ -115,22 +115,21 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
             Element::Way(way) => {
                 if is_walkable_way(&way) {
                     let mut nodes = way.refs();
-                    let mut prev_node = nodes.next().map(|id| id.to_string());
+                    let mut prev_node = nodes.next().unwrap().to_string();
                     for curr_node_id in nodes {
                         let curr_node = curr_node_id.to_string();
-                        if let Some(prev_id) = prev_node {
-                            graph.add_edge(Edge::Walking(WalkingEdge {
-                                origin: prev_id.clone(),
-                                destination: curr_node.clone(),
-                                traversal_time: None,
-                            }));
-                            graph.add_edge(Edge::Walking(WalkingEdge {
-                                origin: curr_node.clone(),
-                                destination: prev_id,
-                                traversal_time: None,
-                            }));
-                            prev_node = Some(curr_node);
-                        }
+
+                        graph.add_edge(Edge::Walking(WalkingEdge {
+                            origin: prev_node.clone(),
+                            destination: curr_node.clone(),
+                            traversal_time: None,
+                        }));
+                        graph.add_edge(Edge::Walking(WalkingEdge {
+                            origin: curr_node.clone(),
+                            destination: prev_node,
+                            traversal_time: None,
+                        }));
+                        prev_node = curr_node;
                     }
                 }
             }
@@ -146,11 +145,10 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
 
     graph.clear_edgeless_nodes();
 
-    for node in graph.nodes.iter() {
-        let id = node.0.clone();
-        let lon = node.1.lon;
-        let lat = node.1.lat;
-        graph.tree.add([lon, lat], id).unwrap();
+    for (id, node) in graph.nodes.iter() {
+        let lon = node.lon;
+        let lat = node.lat;
+        graph.tree.add([lon, lat], id.clone()).unwrap();
     }
 
     println!("Adding GTFS structure to graph");
@@ -271,7 +269,10 @@ fn is_walkable_way(way: &osmpbf::Way) -> bool {
     is_highway_walkable && foot_allowed && service_allowed
 }
 
-fn nearest_node(tree: &KdTree<f64, String, [f64; 2]>, coords: &[f64; 2]) -> Option<(f64, String)> {
+pub fn nearest_node<T>(tree: &KdTree<f64, T, [f64; 2]>, coords: &[f64; 2]) -> Option<(f64, T)>
+where
+    T: Eq + Clone,
+{
     tree.nearest(coords, 1, &crate::dijkstra::haversine_distance)
         .ok()
         .map(|nearest| (nearest[0].0, nearest[0].1.clone()))
