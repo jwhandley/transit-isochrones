@@ -77,29 +77,9 @@ pub fn dijkstra(
             .neighbors(&position)
             .unwrap()
             .iter()
-            .filter(|edge| match edge {
-                Edge::Walking(_) => true,
-                Edge::Transport(e) => e.start_time >= start_time + current_cost,
-            })
+            .filter(|edge| is_valid_edge(edge, start_time, current_cost))
             .for_each(|edge| {
-                let new_cost = match edge {
-                    Edge::Walking(e) => match e.traversal_time {
-                        Some(time) => current_cost + time,
-                        None => {
-                            let start_node = graph.get_node(&edge.origin()).unwrap();
-                            let end_node = graph.get_node(&edge.dest()).unwrap();
-                            let distance = haversine_distance(
-                                &[start_node.lon, start_node.lat],
-                                &[end_node.lon, end_node.lat],
-                            );
-
-                            let walking_time = (distance / WALKING_SPEED) as u32;
-                            current_cost + walking_time
-                        }
-                    },
-                    Edge::Transport(e) => e.end_time - start_time,
-                };
-
+                let new_cost = calculate_edge_cost(edge, current_cost, graph, start_time);
                 let old_cost = visited.get(&edge.dest()).unwrap_or(&u32::MAX);
                 if old_cost > &new_cost && new_cost <= duration {
                     visited.insert(edge.dest().clone(), new_cost);
@@ -113,4 +93,31 @@ pub fn dijkstra(
     }
 
     Ok(visited)
+}
+
+fn is_valid_edge(edge: &Edge, start_time: u32, current_cost: u32) -> bool {
+    match edge {
+        Edge::Walking(_) => true,
+        Edge::Transport(e) => e.start_time >= start_time + current_cost,
+    }
+}
+
+fn calculate_edge_cost(edge: &Edge, current_cost: u32, graph: &Graph, start_time: u32) -> u32 {
+    match edge {
+        Edge::Walking(e) => match e.traversal_time {
+            Some(time) => current_cost + time,
+            None => current_cost + calculate_walking_time(graph, &edge.origin(), &edge.dest()),
+        },
+        Edge::Transport(e) => e.end_time - start_time,
+    }
+}
+
+fn calculate_walking_time(graph: &Graph, start_node: &str, end_node: &str) -> u32 {
+    let start_node = graph.get_node(start_node).unwrap();
+    let end_node = graph.get_node(end_node).unwrap();
+    let distance = haversine_distance(
+        &[start_node.lon, start_node.lat],
+        &[end_node.lon, end_node.lat],
+    );
+    (distance / WALKING_SPEED) as u32
 }
