@@ -1,18 +1,21 @@
 use gtfs_structures::Gtfs;
 use kdtree::KdTree;
 use osmpbf::{Element, ElementReader};
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
+
+#[derive(Eq, Hash, PartialEq, Clone)]
+pub struct NodeId(Arc<str>);
 
 pub struct TransportEdge {
-    pub origin: String,
-    pub destination: String,
+    pub origin: NodeId,
+    pub destination: NodeId,
     pub start_time: u32,
     pub end_time: u32,
 }
 
 pub struct WalkingEdge {
-    pub origin: String,
-    pub destination: String,
+    pub origin: NodeId,
+    pub destination: NodeId,
     pub traversal_time: Option<u32>,
 }
 
@@ -22,14 +25,14 @@ pub enum Edge {
 }
 
 impl Edge {
-    pub fn dest(&self) -> String {
+    pub fn dest(&self) -> NodeId {
         match &self {
             Edge::Walking(e) => e.destination.clone(),
             Edge::Transport(e) => e.destination.clone(),
         }
     }
 
-    pub fn origin(&self) -> String {
+    pub fn origin(&self) -> NodeId {
         match &self {
             Edge::Walking(e) => e.origin.clone(),
             Edge::Transport(e) => e.origin.clone(),
@@ -54,8 +57,8 @@ impl Default for Node {
 }
 
 pub struct Graph {
-    pub nodes: HashMap<String, Node>,
-    pub tree: KdTree<f64, String, [f64; 2]>,
+    pub nodes: HashMap<NodeId, Node>,
+    pub tree: KdTree<f64, NodeId, [f64; 2]>,
 }
 
 impl Default for Graph {
@@ -73,18 +76,18 @@ impl Graph {
         self.nodes.entry(origin).or_default().edges.push(edge);
     }
 
-    pub fn add_node(&mut self, index: String, x: f64, y: f64) {
+    pub fn add_node(&mut self, index: NodeId, x: f64, y: f64) {
         let node = self.nodes.entry(index).or_default();
 
         node.lon = x;
         node.lat = y;
     }
 
-    pub fn neighbors(&self, index: &str) -> Option<&Vec<Edge>> {
+    pub fn neighbors(&self, index: &NodeId) -> Option<&Vec<Edge>> {
         self.nodes.get(index).map(|node| &node.edges)
     }
 
-    pub fn get_node(&self, index: &str) -> Option<&Node> {
+    pub fn get_node(&self, index: &NodeId) -> Option<&Node> {
         self.nodes.get(index)
     }
 
@@ -110,7 +113,7 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
         .for_each(|element| match element {
             Element::Node(osm_node) => {
                 if is_walkable_node(&osm_node) {
-                    let index = osm_node.id().to_string();
+                    let index = NodeId(Arc::from(osm_node.id().to_string()));
                     let x = osm_node.lon();
                     let y = osm_node.lat();
                     graph.add_node(index, x, y);
@@ -121,8 +124,8 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
                     let refs: Vec<_> = way.refs().collect();
 
                     for window in refs.windows(2) {
-                        let first = window[0].to_string();
-                        let second = window[1].to_string();
+                        let first = NodeId(Arc::from(window[0].to_string()));
+                        let second = NodeId(Arc::from(window[1].to_string()));
 
                         graph.add_edge(Edge::Walking(WalkingEdge {
                             origin: first.clone(),
@@ -140,7 +143,7 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
             Element::DenseNode(dense_node) => {
                 let x = dense_node.lon();
                 let y = dense_node.lat();
-                let id = dense_node.id().to_string();
+                let id = NodeId(Arc::from(dense_node.id().to_string()));
                 graph.add_node(id, x, y);
             }
             _ => {}
@@ -157,7 +160,7 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
 
     println!("Adding GTFS structure to graph");
     for (stop_id, stop) in &gtfs.stops {
-        let stop_id = stop_id.to_owned();
+        let stop_id = NodeId(Arc::from(stop_id.clone()));
         let x = stop.longitude.unwrap();
         let y = stop.latitude.unwrap();
 
@@ -179,7 +182,7 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
         }));
 
         for path in stop.pathways.iter() {
-            let to_id = path.to_stop_id.clone();
+            let to_id = NodeId(Arc::from(path.to_stop_id.clone()));
 
             match path.is_bidirectional {
                 gtfs_structures::PathwayDirectionType::Unidirectional => {
@@ -207,8 +210,8 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
 
     for (_, trip) in gtfs.trips.iter() {
         for window in trip.stop_times.windows(2) {
-            let origin = window[0].stop.id.to_owned();
-            let destination = window[1].stop.id.to_owned();
+            let origin = NodeId(Arc::from(window[0].stop.id.to_owned()));
+            let destination = NodeId(Arc::from(window[1].stop.id.to_owned()));
 
             graph.add_edge(Edge::Transport(TransportEdge {
                 origin,
@@ -220,9 +223,10 @@ pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
     }
 
     for stop in gtfs.stops.values() {
+        let id = NodeId(Arc::from(stop.id.to_owned()));
         let lon = stop.longitude.unwrap();
         let lat = stop.latitude.unwrap();
-        graph.tree.add([lon, lat], stop.id.to_owned()).unwrap();
+        graph.tree.add([lon, lat], id).unwrap();
     }
 
     println!(

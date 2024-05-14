@@ -1,5 +1,6 @@
 use crate::graph::nearest_node;
 use crate::graph::Edge;
+use crate::graph::NodeId;
 use crate::Graph;
 use anyhow::anyhow;
 use chrono::NaiveTime;
@@ -27,15 +28,12 @@ pub fn haversine_distance(coord1: &[f64], coord2: &[f64]) -> f64 {
 #[derive(Clone, PartialEq, Eq)]
 struct State {
     cost: u32,
-    position: String,
+    position: NodeId,
 }
 
 impl Ord for State {
     fn cmp(&self, other: &Self) -> Ordering {
-        other
-            .cost
-            .cmp(&self.cost)
-            .then_with(|| self.position.cmp(&other.position))
+        other.cost.cmp(&self.cost)
     }
 }
 
@@ -50,8 +48,8 @@ pub fn dijkstra(
     start_coords: &[f64; 2],
     arrival_time: NaiveTime,
     duration: u32,
-) -> Result<HashMap<String, u32>, anyhow::Error> {
-    let mut visited: HashMap<String, u32> = HashMap::new();
+) -> Result<HashMap<NodeId, u32>, anyhow::Error> {
+    let mut visited: HashMap<NodeId, u32> = HashMap::new();
     let mut queue = BinaryHeap::new();
     let start_time = arrival_time.num_seconds_from_midnight() - duration;
 
@@ -73,23 +71,30 @@ pub fn dijkstra(
         position,
     }) = queue.pop()
     {
-        graph
+        let mut neighbors: Vec<_> = graph
             .neighbors(&position)
             .unwrap()
             .iter()
             .filter(|edge| is_valid_edge(edge, start_time, current_cost))
-            .for_each(|edge| {
-                let new_cost = calculate_edge_cost(edge, current_cost, graph, start_time);
-                let old_cost = visited.get(&edge.dest()).unwrap_or(&u32::MAX);
-                if old_cost > &new_cost && new_cost <= duration {
-                    visited.insert(edge.dest().clone(), new_cost);
-                    let next_state = State {
-                        cost: new_cost,
-                        position: edge.dest(),
-                    };
-                    queue.push(next_state);
-                }
-            });
+            .collect();
+
+        neighbors.sort_unstable_by_key(|edge| match edge {
+            Edge::Transport(e) => e.end_time,
+            Edge::Walking(_) => u32::MIN,
+        });
+
+        neighbors.iter().for_each(|edge| {
+            let new_cost = calculate_edge_cost(edge, current_cost, graph, start_time);
+            let old_cost = visited.get(&edge.dest()).unwrap_or(&u32::MAX);
+            if old_cost > &new_cost && new_cost <= duration {
+                visited.insert(edge.dest().clone(), new_cost);
+                let next_state = State {
+                    cost: new_cost,
+                    position: edge.dest(),
+                };
+                queue.push(next_state);
+            }
+        });
     }
 
     Ok(visited)
@@ -112,7 +117,7 @@ fn calculate_edge_cost(edge: &Edge, current_cost: u32, graph: &Graph, start_time
     }
 }
 
-fn calculate_walking_time(graph: &Graph, start_node: &str, end_node: &str) -> u32 {
+fn calculate_walking_time(graph: &Graph, start_node: &NodeId, end_node: &NodeId) -> u32 {
     let start_node = graph.get_node(start_node).unwrap();
     let end_node = graph.get_node(end_node).unwrap();
     let distance = haversine_distance(
