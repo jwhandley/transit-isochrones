@@ -28,17 +28,17 @@ pub enum Edge {
 }
 
 impl Edge {
-    pub fn dest(&self) -> NodeId {
+    pub fn dest(&self) -> &NodeId {
         match &self {
-            Edge::Walking(e) => e.destination.clone(),
-            Edge::Transport(e) => e.destination.clone(),
+            Edge::Walking(e) => &e.destination,
+            Edge::Transport(e) => &e.destination,
         }
     }
 
-    pub fn origin(&self) -> NodeId {
+    pub fn origin(&self) -> &NodeId {
         match &self {
-            Edge::Walking(e) => e.origin.clone(),
-            Edge::Transport(e) => e.origin.clone(),
+            Edge::Walking(e) => &e.origin,
+            Edge::Transport(e) => &e.origin,
         }
     }
 }
@@ -76,7 +76,11 @@ impl Default for Graph {
 impl Graph {
     pub fn add_edge(&mut self, edge: Edge) {
         let origin = edge.origin();
-        self.nodes.entry(origin).or_default().edges.push(edge);
+        self.nodes
+            .entry(origin.clone())
+            .or_default()
+            .edges
+            .push(edge);
     }
 
     pub fn add_node(&mut self, index: NodeId, x: f64, y: f64) {

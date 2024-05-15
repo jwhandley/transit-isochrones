@@ -85,12 +85,12 @@ pub fn dijkstra(
 
         neighbors.iter().for_each(|edge| {
             let new_cost = calculate_edge_cost(edge, current_cost, graph, start_time);
-            let old_cost = visited.get(&edge.dest()).unwrap_or(&u32::MAX);
+            let old_cost = visited.get(edge.dest()).unwrap_or(&u32::MAX);
             if old_cost > &new_cost && new_cost <= duration {
                 visited.insert(edge.dest().clone(), new_cost);
                 let next_state = State {
                     cost: new_cost,
-                    position: edge.dest(),
+                    position: edge.dest().clone(),
                 };
                 queue.push(next_state);
             }
@@ -111,7 +111,7 @@ fn calculate_edge_cost(edge: &Edge, current_cost: u32, graph: &Graph, start_time
     match edge {
         Edge::Walking(e) => match e.traversal_time {
             Some(time) => current_cost + time,
-            None => current_cost + calculate_walking_time(graph, &edge.origin(), &edge.dest()),
+            None => current_cost + calculate_walking_time(graph, edge.origin(), edge.dest()),
         },
         Edge::Transport(e) => e.end_time - start_time,
     }
