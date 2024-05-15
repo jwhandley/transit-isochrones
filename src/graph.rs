@@ -46,28 +46,19 @@ impl Edge {
 pub struct Node {
     pub lon: f64,
     pub lat: f64,
-    edges: Vec<Edge>,
-}
-
-impl Default for Node {
-    fn default() -> Self {
-        Node {
-            lon: 0.0,
-            lat: 0.0,
-            edges: Vec::new(),
-        }
-    }
 }
 
 pub struct Graph {
-    pub nodes: HashMap<NodeId, Node>,
-    pub tree: KdTree<f64, NodeId, [f64; 2]>,
+    nodes: HashMap<NodeId, Node>,
+    adjacency: HashMap<NodeId, Vec<Edge>>,
+    tree: KdTree<f64, NodeId, [f64; 2]>,
 }
 
 impl Default for Graph {
     fn default() -> Self {
         Self {
             nodes: HashMap::new(),
+            adjacency: HashMap::new(),
             tree: KdTree::new(2),
         }
     }
@@ -76,170 +67,172 @@ impl Default for Graph {
 impl Graph {
     pub fn add_edge(&mut self, edge: Edge) {
         let origin = edge.origin();
-        self.nodes
-            .entry(origin.clone())
-            .or_default()
-            .edges
-            .push(edge);
+        self.adjacency.entry(origin.clone()).or_default().push(edge);
     }
 
     pub fn add_node(&mut self, index: NodeId, x: f64, y: f64) {
-        let node = self.nodes.entry(index).or_default();
-
-        node.lon = x;
-        node.lat = y;
+        let node = Node { lon: x, lat: y };
+        self.nodes.insert(index, node);
     }
 
     pub fn neighbors(&self, index: &NodeId) -> Option<&Vec<Edge>> {
-        self.nodes.get(index).map(|node| &node.edges)
+        self.adjacency.get(index)
     }
 
     pub fn get_node(&self, index: &NodeId) -> Option<&Node> {
         self.nodes.get(index)
     }
 
-    pub fn clear_edgeless_nodes(&mut self) {
-        self.nodes.retain(|_, node| !node.edges.is_empty());
+    pub fn nearest_node(&self, coords: &[f64; 2]) -> Result<(f64, NodeId), anyhow::Error> {
+        nearest_point(&self.tree, coords)
     }
-}
 
-pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
-    let mut graph = Graph::default();
+    fn clear_edgeless_nodes(&mut self) {
+        self.nodes.retain(|id, _| self.adjacency.contains_key(id));
+    }
 
-    let reader = ElementReader::from_path(osm_path).unwrap();
-    let gtfs = Gtfs::from_path(
-        gtfs_path
-            .to_str()
-            .expect("Should have been able to convert Path to str"),
-    )
-    .unwrap();
+    fn from_osm(osm_path: &Path) -> Self {
+        let mut graph = Self::default();
 
-    let start_time = std::time::Instant::now();
-    println!("Adding OSM structure to graph");
-    reader
-        .for_each(|element| match element {
-            Element::Node(osm_node) => {
-                if is_walkable_node(&osm_node) {
-                    let index = NodeId::Osm(osm_node.id());
-                    let x = osm_node.lon();
-                    let y = osm_node.lat();
-                    graph.add_node(index, x, y);
+        let reader = ElementReader::from_path(osm_path).unwrap();
+        reader
+            .for_each(|element| match element {
+                Element::Node(osm_node) => {
+                    if is_walkable_node(&osm_node) {
+                        let index = NodeId::Osm(osm_node.id());
+                        let x = osm_node.lon();
+                        let y = osm_node.lat();
+                        graph.add_node(index, x, y);
+                    }
                 }
-            }
-            Element::Way(way) => {
-                if is_walkable_way(&way) {
-                    let refs: Vec<_> = way.refs().collect();
+                Element::Way(way) => {
+                    if is_walkable_way(&way) {
+                        let refs: Vec<_> = way.refs().collect();
 
-                    for window in refs.windows(2) {
-                        let first = NodeId::Osm(window[0]);
-                        let second = NodeId::Osm(window[1]);
+                        for window in refs.windows(2) {
+                            let first = NodeId::Osm(window[0]);
+                            let second = NodeId::Osm(window[1]);
 
-                        graph.add_edge(Edge::Walking(WalkingEdge {
-                            origin: first.clone(),
-                            destination: second.clone(),
-                            traversal_time: None,
+                            graph.add_edge(Edge::Walking(WalkingEdge {
+                                origin: first.clone(),
+                                destination: second.clone(),
+                                traversal_time: None,
+                            }));
+                            graph.add_edge(Edge::Walking(WalkingEdge {
+                                origin: second,
+                                destination: first,
+                                traversal_time: None,
+                            }));
+                        }
+                    }
+                }
+                Element::DenseNode(dense_node) => {
+                    let x = dense_node.lon();
+                    let y = dense_node.lat();
+                    let id = NodeId::Osm(dense_node.id());
+                    graph.add_node(id, x, y);
+                }
+                _ => {}
+            })
+            .unwrap();
+
+        graph.clear_edgeless_nodes();
+
+        for (id, node) in graph.nodes.iter() {
+            let lon = node.lon;
+            let lat = node.lat;
+            graph.tree.add([lon, lat], id.clone()).unwrap();
+        }
+
+        graph
+    }
+
+    fn add_gtfs(&mut self, gtfs_path: &Path) {
+        let gtfs = Gtfs::from_path(
+            gtfs_path
+                .to_str()
+                .expect("Should have been able to convert Path to str"),
+        )
+        .unwrap();
+        for (stop_id, stop) in &gtfs.stops {
+            let stop_id = NodeId::Gtfs(Arc::from(stop_id.clone()));
+            let x = stop.longitude.unwrap();
+            let y = stop.latitude.unwrap();
+
+            let (distance, osm_node) =
+                nearest_point(&self.tree, &[x, y]).expect("No nearest node found");
+
+            self.add_node(stop_id.clone(), x, y);
+
+            let traversal_time = (distance / crate::dijkstra::WALKING_SPEED) as u32;
+            self.add_edge(Edge::Walking(WalkingEdge {
+                origin: stop_id.clone(),
+                destination: osm_node.clone(),
+                traversal_time: Some(traversal_time),
+            }));
+            self.add_edge(Edge::Walking(WalkingEdge {
+                origin: osm_node,
+                destination: stop_id.clone(),
+                traversal_time: Some(traversal_time),
+            }));
+
+            for path in stop.pathways.iter() {
+                let to_id = NodeId::Gtfs(Arc::from(path.to_stop_id.clone()));
+
+                match path.is_bidirectional {
+                    gtfs_structures::PathwayDirectionType::Unidirectional => {
+                        self.add_edge(Edge::Walking(WalkingEdge {
+                            origin: stop_id.clone(),
+                            destination: to_id,
+                            traversal_time: path.traversal_time,
                         }));
-                        graph.add_edge(Edge::Walking(WalkingEdge {
-                            origin: second,
-                            destination: first,
-                            traversal_time: None,
+                    }
+                    gtfs_structures::PathwayDirectionType::Bidirectional => {
+                        self.add_edge(Edge::Walking(WalkingEdge {
+                            origin: stop_id.clone(),
+                            destination: to_id.clone(),
+                            traversal_time: path.traversal_time,
+                        }));
+                        self.add_edge(Edge::Walking(WalkingEdge {
+                            origin: to_id.clone(),
+                            destination: stop_id.clone(),
+                            traversal_time: path.traversal_time,
                         }));
                     }
                 }
             }
-            Element::DenseNode(dense_node) => {
-                let x = dense_node.lon();
-                let y = dense_node.lat();
-                let id = NodeId::Osm(dense_node.id());
-                graph.add_node(id, x, y);
+        }
+
+        for (_, trip) in gtfs.trips.iter() {
+            for window in trip.stop_times.windows(2) {
+                let origin = NodeId::Gtfs(Arc::from(window[0].stop.id.to_owned()));
+                let destination = NodeId::Gtfs(Arc::from(window[1].stop.id.to_owned()));
+
+                self.add_edge(Edge::Transport(TransportEdge {
+                    origin,
+                    destination,
+                    start_time: window[0].departure_time.unwrap(),
+                    end_time: window[1].arrival_time.unwrap(),
+                }));
             }
-            _ => {}
-        })
-        .unwrap();
+        }
 
-    graph.clear_edgeless_nodes();
-
-    for (id, node) in graph.nodes.iter() {
-        let lon = node.lon;
-        let lat = node.lat;
-        graph.tree.add([lon, lat], id.clone()).unwrap();
+        for stop in gtfs.stops.values() {
+            let id = NodeId::Gtfs(Arc::from(stop.id.to_owned()));
+            let lon = stop.longitude.unwrap();
+            let lat = stop.latitude.unwrap();
+            self.tree.add([lon, lat], id).unwrap();
+        }
     }
+}
 
+pub fn build_graph_osm(osm_path: &Path, gtfs_path: &Path) -> Graph {
+    let start = std::time::Instant::now();
+    println!("Adding OSM structure to graph");
+    let mut graph = Graph::from_osm(osm_path);
     println!("Adding GTFS structure to graph");
-    for (stop_id, stop) in &gtfs.stops {
-        let stop_id = NodeId::Gtfs(Arc::from(stop_id.clone()));
-        let x = stop.longitude.unwrap();
-        let y = stop.latitude.unwrap();
-
-        let (distance, osm_node) =
-            nearest_node(&graph.tree, &[x, y]).expect("No nearest node found");
-
-        graph.add_node(stop_id.clone(), x, y);
-
-        let traversal_time = (distance / crate::dijkstra::WALKING_SPEED) as u32;
-        graph.add_edge(Edge::Walking(WalkingEdge {
-            origin: stop_id.clone(),
-            destination: osm_node.clone(),
-            traversal_time: Some(traversal_time),
-        }));
-        graph.add_edge(Edge::Walking(WalkingEdge {
-            origin: osm_node,
-            destination: stop_id.clone(),
-            traversal_time: Some(traversal_time),
-        }));
-
-        for path in stop.pathways.iter() {
-            let to_id = NodeId::Gtfs(Arc::from(path.to_stop_id.clone()));
-
-            match path.is_bidirectional {
-                gtfs_structures::PathwayDirectionType::Unidirectional => {
-                    graph.add_edge(Edge::Walking(WalkingEdge {
-                        origin: stop_id.clone(),
-                        destination: to_id,
-                        traversal_time: path.traversal_time,
-                    }));
-                }
-                gtfs_structures::PathwayDirectionType::Bidirectional => {
-                    graph.add_edge(Edge::Walking(WalkingEdge {
-                        origin: stop_id.clone(),
-                        destination: to_id.clone(),
-                        traversal_time: path.traversal_time,
-                    }));
-                    graph.add_edge(Edge::Walking(WalkingEdge {
-                        origin: to_id.clone(),
-                        destination: stop_id.clone(),
-                        traversal_time: path.traversal_time,
-                    }));
-                }
-            }
-        }
-    }
-
-    for (_, trip) in gtfs.trips.iter() {
-        for window in trip.stop_times.windows(2) {
-            let origin = NodeId::Gtfs(Arc::from(window[0].stop.id.to_owned()));
-            let destination = NodeId::Gtfs(Arc::from(window[1].stop.id.to_owned()));
-
-            graph.add_edge(Edge::Transport(TransportEdge {
-                origin,
-                destination,
-                start_time: window[0].departure_time.unwrap(),
-                end_time: window[1].arrival_time.unwrap(),
-            }));
-        }
-    }
-
-    for stop in gtfs.stops.values() {
-        let id = NodeId::Gtfs(Arc::from(stop.id.to_owned()));
-        let lon = stop.longitude.unwrap();
-        let lat = stop.latitude.unwrap();
-        graph.tree.add([lon, lat], id).unwrap();
-    }
-
-    println!(
-        "Took {}ms to build the graph",
-        start_time.elapsed().as_millis()
-    );
+    graph.add_gtfs(gtfs_path);
+    println!("Took {}ms to build the graph", start.elapsed().as_millis());
 
     graph
 }
@@ -286,7 +279,7 @@ fn is_walkable_way(way: &osmpbf::Way) -> bool {
     is_highway_walkable && foot_allowed && service_allowed
 }
 
-pub fn nearest_node<T>(
+pub fn nearest_point<T>(
     tree: &KdTree<f64, T, [f64; 2]>,
     coords: &[f64; 2],
 ) -> Result<(f64, T), anyhow::Error>

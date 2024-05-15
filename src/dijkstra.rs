@@ -1,4 +1,3 @@
-use crate::graph::nearest_node;
 use crate::graph::Edge;
 use crate::graph::NodeId;
 use crate::Graph;
@@ -53,7 +52,7 @@ pub fn dijkstra(
     let mut queue = BinaryHeap::new();
     let start_time = arrival_time.num_seconds_from_midnight() - duration;
 
-    let (distance, start_node) = nearest_node(&graph.tree, start_coords)?;
+    let (distance, start_node) = graph.nearest_node(start_coords)?;
 
     if distance > MAX_DISTANCE {
         Err(anyhow!("Start node is too far away"))?;
