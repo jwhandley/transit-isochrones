@@ -6,7 +6,7 @@ use chrono::NaiveTime;
 use clap::Parser;
 use kdtree::KdTree;
 use rocket::{http::Status, State};
-use transit_isochrones::{build_graph_osm, create_contour, dijkstra, Graph};
+use transit_isochrones::{create_contour, dijkstra, Graph, GraphBuilder};
 
 const GRID_SIZE: usize = 250; // Number of points per side of the grid
 const ONE_HOUR: f64 = 3600.0; // Seconds per hour
@@ -81,7 +81,10 @@ async fn main() -> Result<(), rocket::Error> {
     } = Args::parse();
 
     // Build the graph
-    let graph = build_graph_osm(&osm_path, &gtfs_path);
+    let graph = GraphBuilder::new()
+        .load_osm(&osm_path)
+        .load_gtfs(&gtfs_path)
+        .build();
 
     // Start the server
     rocket::build()
