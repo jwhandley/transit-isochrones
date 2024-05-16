@@ -7,6 +7,7 @@ use chrono::Timelike;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 pub const WALKING_SPEED: f64 = 1.0;
 const RADIUS_EARTH_KM: f64 = 6371.0;
@@ -48,7 +49,8 @@ pub fn dijkstra(
     arrival_time: NaiveTime,
     duration: u32,
 ) -> Result<HashMap<NodeId, u32>, anyhow::Error> {
-    let mut visited: HashMap<NodeId, u32> = HashMap::new();
+    let mut distances: HashMap<NodeId, u32> = HashMap::new();
+    let mut visited: HashSet<NodeId> = HashSet::new();
     let mut queue = BinaryHeap::new();
     let start_time = arrival_time.num_seconds_from_midnight() - duration;
 
@@ -70,11 +72,17 @@ pub fn dijkstra(
         position,
     }) = queue.pop()
     {
+        if visited.contains(&position) {
+            continue;
+        }
+
         let mut neighbors: Vec<_> = graph
             .neighbors(&position)
             .unwrap()
             .iter()
-            .filter(|edge| is_valid_edge(edge, start_time, current_cost))
+            .filter(|edge| {
+                is_valid_edge(edge, start_time, current_cost) && !visited.contains(edge.dest())
+            })
             .collect();
 
         neighbors.sort_unstable_by_key(|edge| match edge {
@@ -84,19 +92,22 @@ pub fn dijkstra(
 
         neighbors.iter().for_each(|edge| {
             let new_cost = calculate_edge_cost(edge, current_cost, graph, start_time);
-            let old_cost = visited.get(edge.dest()).unwrap_or(&u32::MAX);
+            let old_cost = distances.get(edge.dest()).unwrap_or(&u32::MAX);
+
             if old_cost > &new_cost && new_cost <= duration {
-                visited.insert(edge.dest().clone(), new_cost);
-                let next_state = State {
+                distances.insert(edge.dest().clone(), new_cost);
+
+                queue.push(State {
                     cost: new_cost,
                     position: edge.dest().clone(),
-                };
-                queue.push(next_state);
+                });
             }
         });
+
+        visited.insert(position);
     }
 
-    Ok(visited)
+    Ok(distances)
 }
 
 fn is_valid_edge(edge: &Edge, start_time: u32, current_cost: u32) -> bool {
