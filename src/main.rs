@@ -53,8 +53,12 @@ fn isochrone(
     let start_time = std::time::Instant::now();
     let mut sptree = KdTree::new(2);
     for (node_id, dist) in reachable_nodes {
-        let node = graph.get_node(&node_id).unwrap();
-        sptree.add([node.lon, node.lat], dist).unwrap();
+        let node = graph
+            .get_node(&node_id)
+            .expect("Reachable nodes must be in the graph");
+        sptree
+            .add([node.lon, node.lat], dist)
+            .expect("Couldn't add node to KD-Tree");
     }
 
     let size = MAX_SPEED * duration as f64 / ONE_HOUR;
@@ -74,7 +78,7 @@ fn isochrone(
 }
 
 #[main]
-async fn main() -> Result<(), rocket::Error> {
+async fn main() -> Result<(), anyhow::Error> {
     let Args {
         osm_path,
         gtfs_path,
@@ -82,8 +86,8 @@ async fn main() -> Result<(), rocket::Error> {
 
     // Build the graph
     let graph = GraphBuilder::new()
-        .load_osm(&osm_path)
-        .load_gtfs(&gtfs_path)
+        .load_osm(&osm_path)?
+        .load_gtfs(&gtfs_path)?
         .build();
 
     // Start the server

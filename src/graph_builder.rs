@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
+use anyhow::anyhow;
 use gtfs_structures::Gtfs;
 use kdtree::KdTree;
 use osmpbf::{Element, ElementReader};
@@ -40,75 +41,76 @@ impl GraphBuilder {
         self.nodes.insert(index, node);
     }
 
-    pub fn load_osm(mut self, osm_path: &Path) -> Self {
-        let reader = ElementReader::from_path(osm_path).unwrap();
-        reader
-            .for_each(|element| match element {
-                Element::Node(osm_node) => {
-                    if is_walkable_node(&osm_node) {
-                        let id = NodeId::Osm(osm_node.id());
-                        let lon = osm_node.lon();
-                        let lat = osm_node.lat();
-                        self.add_node(id, lon, lat);
-                    }
-                }
-                Element::Way(way) => {
-                    if is_walkable_way(&way) {
-                        let refs: Vec<_> = way.refs().collect();
-
-                        for window in refs.windows(2) {
-                            let first = NodeId::Osm(window[0]);
-                            let second = NodeId::Osm(window[1]);
-
-                            self.add_edge(Edge::Walking(WalkingEdge {
-                                origin: first.clone(),
-                                destination: second.clone(),
-                                traversal_time: None,
-                            }));
-                            self.add_edge(Edge::Walking(WalkingEdge {
-                                origin: second,
-                                destination: first,
-                                traversal_time: None,
-                            }));
-                        }
-                    }
-                }
-                Element::DenseNode(dense_node) => {
-                    let id = NodeId::Osm(dense_node.id());
-                    let lon = dense_node.lon();
-                    let lat = dense_node.lat();
-
+    pub fn load_osm(mut self, osm_path: &Path) -> Result<Self, anyhow::Error> {
+        let reader = ElementReader::from_path(osm_path)?;
+        reader.for_each(|element| match element {
+            Element::Node(osm_node) => {
+                if is_walkable_node(&osm_node) {
+                    let id = NodeId::Osm(osm_node.id());
+                    let lon = osm_node.lon();
+                    let lat = osm_node.lat();
                     self.add_node(id, lon, lat);
                 }
-                _ => {}
-            })
-            .unwrap();
+            }
+            Element::Way(way) => {
+                if is_walkable_way(&way) {
+                    let refs: Vec<_> = way.refs().collect();
+
+                    for window in refs.windows(2) {
+                        let first = NodeId::Osm(window[0]);
+                        let second = NodeId::Osm(window[1]);
+
+                        self.add_edge(Edge::Walking(WalkingEdge {
+                            origin: first.clone(),
+                            destination: second.clone(),
+                            traversal_time: None,
+                        }));
+                        self.add_edge(Edge::Walking(WalkingEdge {
+                            origin: second,
+                            destination: first,
+                            traversal_time: None,
+                        }));
+                    }
+                }
+            }
+            Element::DenseNode(dense_node) => {
+                let id = NodeId::Osm(dense_node.id());
+                let lon = dense_node.lon();
+                let lat = dense_node.lat();
+
+                self.add_node(id, lon, lat);
+            }
+            _ => {}
+        })?;
 
         self.clear_edgeless_nodes();
 
         for (id, node) in self.nodes.iter() {
             let lon = node.lon;
             let lat = node.lat;
-            self.tree.add([lon, lat], id.clone()).unwrap();
+            self.tree.add([lon, lat], id.clone())?;
         }
 
-        self
+        Ok(self)
     }
 
-    pub fn load_gtfs(mut self, gtfs_path: &Path) -> Self {
+    pub fn load_gtfs(mut self, gtfs_path: &Path) -> Result<Self, anyhow::Error> {
         let gtfs = Gtfs::from_path(
             gtfs_path
                 .to_str()
-                .expect("Should have been able to convert Path to str"),
-        )
-        .unwrap();
+                .ok_or(anyhow!("Should have been able to convert path to str"))?,
+        )?;
+
         for (stop_id, stop) in &gtfs.stops {
             let stop_id = NodeId::Gtfs(Arc::from(stop_id.clone()));
-            let lon = stop.longitude.unwrap();
-            let lat = stop.latitude.unwrap();
+            let lon = stop
+                .longitude
+                .ok_or(anyhow!("All stops must have coordinates"))?;
+            let lat = stop
+                .latitude
+                .ok_or(anyhow!("All stops must have coordinates"))?;
 
-            let (distance, osm_node) =
-                nearest_point(&self.tree, &[lon, lat]).expect("No nearest node found");
+            let (distance, osm_node) = nearest_point(&self.tree, &[lon, lat])?;
 
             self.add_node(stop_id.clone(), lon, lat);
 
@@ -159,20 +161,28 @@ impl GraphBuilder {
                 self.add_edge(Edge::Transport(TransportEdge {
                     origin,
                     destination,
-                    start_time: window[0].departure_time.unwrap(),
-                    end_time: window[1].arrival_time.unwrap(),
+                    start_time: window[0]
+                        .departure_time
+                        .ok_or(anyhow!("All stops must have a departure time"))?,
+                    end_time: window[1]
+                        .arrival_time
+                        .ok_or(anyhow!("All stops must have an arrival time"))?,
                 }));
             }
         }
 
         for stop in gtfs.stops.values() {
             let id = NodeId::Gtfs(Arc::from(stop.id.to_owned()));
-            let lon = stop.longitude.unwrap();
-            let lat = stop.latitude.unwrap();
-            self.tree.add([lon, lat], id).unwrap();
+            let lon = stop
+                .longitude
+                .ok_or(anyhow!("All stops must have coordinates"))?;
+            let lat = stop
+                .latitude
+                .ok_or(anyhow!("All stops must have coordinates"))?;
+            self.tree.add([lon, lat], id)?;
         }
 
-        self
+        Ok(self)
     }
 
     pub fn build(self) -> Graph {

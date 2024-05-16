@@ -78,7 +78,7 @@ pub fn dijkstra(
 
         let mut neighbors: Vec<_> = graph
             .neighbors(&position)
-            .unwrap()
+            .expect("All nodes should have neighbors")
             .iter()
             .filter(|edge| {
                 is_valid_edge(edge, start_time, current_cost) && !visited.contains(edge.dest())
@@ -121,18 +121,22 @@ fn calculate_edge_cost(edge: &Edge, current_cost: u32, graph: &Graph, start_time
     match edge {
         Edge::Walking(e) => match e.traversal_time {
             Some(time) => current_cost + time,
-            None => current_cost + calculate_walking_time(graph, edge.origin(), edge.dest()),
+            None => {
+                current_cost
+                    + calculate_walking_time(graph, edge.origin(), edge.dest())
+                        .expect("Should have been able to calculate travel time")
+            }
         },
         Edge::Transport(e) => e.end_time - start_time,
     }
 }
 
-fn calculate_walking_time(graph: &Graph, start_node: &NodeId, end_node: &NodeId) -> u32 {
-    let start_node = graph.get_node(start_node).unwrap();
-    let end_node = graph.get_node(end_node).unwrap();
+fn calculate_walking_time(graph: &Graph, start_node: &NodeId, end_node: &NodeId) -> Option<u32> {
+    let start_node = graph.get_node(start_node)?;
+    let end_node = graph.get_node(end_node)?;
     let distance = haversine_distance(
         &[start_node.lon, start_node.lat],
         &[end_node.lon, end_node.lat],
     );
-    (distance / WALKING_SPEED) as u32
+    Some((distance / WALKING_SPEED) as u32)
 }
